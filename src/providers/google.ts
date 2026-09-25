@@ -162,7 +162,7 @@ export function slugify(name: string): string {
 function kindFromBucketId(bucketId: unknown): string | null {
   if (typeof bucketId !== "string" || bucketId === "") return null;
   const lower = bucketId.toLowerCase();
-  if (lower.includes("weekly")) return "weekly";
+  if (lower.includes("weekly")) return "7d";
   if (lower.includes("5h")) return "5h";
   return slugify(bucketId) || null;
 }
@@ -183,7 +183,9 @@ export function parseGoogleSummary(body: unknown): Window[] | null {
       if (typeof rawBucket !== "object" || rawBucket === null) continue;
       const b = rawBucket as { window?: unknown; bucketId?: unknown; remainingFraction?: unknown; resetTime?: unknown };
       if (typeof b.remainingFraction !== "number" || typeof b.resetTime !== "string") continue;
-      const kind = typeof b.window === "string" && b.window !== "" ? b.window : kindFromBucketId(b.bucketId);
+      // "weekly" is normalized to "7d" for cross-provider consistency (claude/glm report the same measure as "7d").
+      const rawKind = typeof b.window === "string" && b.window !== "" ? b.window : kindFromBucketId(b.bucketId);
+      const kind = rawKind === "weekly" ? "7d" : rawKind;
       if (kind === null) continue;
       const t = Date.parse(b.resetTime);
       if (!Number.isFinite(t)) continue;

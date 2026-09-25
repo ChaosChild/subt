@@ -32,7 +32,7 @@ Every subcommand supports `--help`; unknown flags exit 2 (fail loud).
 claude     5h 13% (reset 18:04) · 7d 89% !
 glm        5h 4% (reset 19:47) · 7d 61%
 alibaba    credits 31,240/45,000 · cycle ends 2026-10-12
-google     5h 62% left · weekly 81% left   [stale]
+google     5h 62% left · 7d 81% left   [stale]
 opencode   PAYG · no usage API (signals only)
 openrouter $74.75 left · key today $1.20
 next: claude 5h at 18:09 (4h 49m)
@@ -367,6 +367,14 @@ inference). Absent everywhere → `no-credentials`, hint `run subtrk init or ope
 - Missing key → `no-credentials`, hint `run subtrk init`.
 
 ## `subtrk init` (one-time interactive setup)
+
+First, init asks which providers to track: a numbered listing of all six,
+answered with numbers and/or ids (`1 3 5`, `claude, google`); empty input keeps
+the current selection, invalid input re-prompts (bounded), and non-TTY stdin
+skips the question. The answer is stored as `~/.subtrk/config.json`
+`{ "enabled": [...] }` – the same gate `subtrk status` applies – and the checks
+below only cover selected providers; edit the file or re-run init to change it,
+deleting it restores all.
 
 Checks, in order, printing a checklist with pass/fail per provider:
 1. Claude: `~/.claude/.credentials.json` readable + unexpired → else instruct `claude /login`.

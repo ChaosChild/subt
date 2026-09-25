@@ -18,7 +18,7 @@ $ subtrk
 claude     5h 13% (reset 18:04) · 7d 89% !
 glm        5h 4% (reset 19:47) · 7d 61%
 alibaba    credits 31,240/45,000 · cycle ends 2026-10-12
-google     5h 62% left · weekly 81% left   [stale]
+google     5h 62% left · 7d 81% left   [stale]
 opencode   PAYG · no usage API (signals only)
 openrouter $74.75 left · key today $1.20
 next: claude 5h at 18:09 (4h 49m)
@@ -101,10 +101,14 @@ npm install       # dev-only toolchain
 npm link          # puts `subtrk` on PATH (subtrk.cmd on Windows)
 ```
 
-`subtrk init` checks every provider's credentials, runs the Alibaba login flow
-(`bl auth login --api-key` + `--console` browser login), prompts for OpenRouter
-keys (hidden input, saved to `~/.subtrk/env`), and verifies each provider honestly –
-`[ok]` only when a credential actually works.
+`subtrk init` first asks which providers you track – a numbered listing answered
+with numbers and/or ids (e.g. `1 3 5` or `claude, google`) – and stores the
+selection in `~/.subtrk/config.json`; the checks below then only cover those.
+Edit the file or re-run `subtrk init` to change the selection, delete it to
+track all six again. It runs the Alibaba login flow (`bl auth login --api-key` +
+`--console` browser login), prompts for OpenRouter keys (hidden input, saved to
+`~/.subtrk/env`), and verifies each provider honestly – `[ok]` only when a
+credential actually works.
 
 ## Providers
 
@@ -113,7 +117,7 @@ keys (hidden input, saved to `~/.subtrk/env`), and verifies each provider honest
 | Anthropic | Claude Pro (personal) | `api.anthropic.com/api/oauth/usage` via the OAuth token Claude Code already stores | 5h + 7d | reverse-engineered, de-facto standard |
 | Z.ai | GLM Coding Plan | the same monitor endpoint ZCode itself uses | 5h + weekly | unofficial, officially plugin-endorsed |
 | Alibaba Cloud | Model Studio Token Plan (intl) | official `bl` CLI raw gateway passthrough (`bl console call`) | 30-day credits pool (monthly-only since 2026-09-22) | official (via bl) |
-| Google | AI Pro (personal) | agy's Credential Manager token → Code Assist quota summary (body `{}`, UA `antigravity`); read-only self-refresh | per-family 5h/weekly (gemini + claude-and-gpt families) | best-effort – degrades to `agy /usage` |
+| Google | AI Pro (personal) | agy's Credential Manager token → Code Assist quota summary (body `{}`, UA `antigravity`); read-only self-refresh | per-family 5h/7d (gemini + claude-and-gpt families) | best-effort – degrades to `agy /usage` |
 | OpenCode | Zen pay-as-you-go | no usage/balance API exists for PAYG | – | signals only (honest note) |
 | OpenRouter | pay-as-you-go | `/api/v1/key` (+ `/api/v1/credits` with a management key) | – | official |
 

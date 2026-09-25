@@ -223,7 +223,7 @@ footer code { font-family: var(--mono); color: var(--text-2); }
   </section>
 
   <section aria-labelledby="h-tl">
-    <div class="sechead"><h2 id="h-tl">Reset timeline</h2><p>Next 7 days · label = current usage of the window that resets</p></div>
+    <div class="sechead"><h2 id="h-tl">Reset timeline</h2><p>Next 8 days · label = current usage of the window that resets</p></div>
     <div class="card tl" id="timeline">…</div>
   </section>
 
@@ -402,7 +402,7 @@ function summaryHTML() {
 }
 
 function timelineHTML() {
-  const span = 7 * 864e5, start = now();
+  const span = 8 * 864e5, start = now();
   const pos = t => Math.min(100, (new Date(t) - start) / span * 100);
   const lanes = STATUS.providers.filter(p => Array.isArray(p.windows) && p.windows.length).flatMap(p =>
     [...new Set(p.windows.map(w => w.scope))].map(sc => ({ p, sc, ws: p.windows.filter(w => w.scope === sc) })));
@@ -414,9 +414,9 @@ function timelineHTML() {
     }).join("");
     return `<div class="tlrow"><span class="n">${esc(p.id)}${sc ? ` <span style="color:var(--text-3)">· ${esc(sc.split("-")[0])}</span>` : ""}</span><div class="lane">${marks}</div></div>`;
   }).join("");
-  const ticks = Array.from({ length: 8 }, (_, i) => {
+  const ticks = Array.from({ length: 9 }, (_, i) => {
     const d = new Date(start + i * 864e5);
-    return `<span style="left:${i / 7 * 100}%">${i === 0 ? "now" : d.toLocaleDateString("en-GB", { weekday: "short" })}</span>`;
+    return `<span style="left:${i / 8 * 100}%">${i === 0 ? "now" : d.toLocaleDateString("en-GB", { weekday: "short" })}</span>`;
   }).join("");
   return rows + `<div class="axis"><span></span><div class="ticks">${ticks}</div></div>`;
 }

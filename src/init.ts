@@ -6,7 +6,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { getSecret, registerSecret, SUBTRK_DIR, scrub } from "./core.ts";
+import type { ProviderId } from "./core.ts";
+import { ALL_PROVIDER_IDS, getSecret, loadConfig, registerSecret, SUBTRK_DIR, scrub } from "./core.ts";
 import { claudeAuth } from "./providers/claude.ts";
 
 export interface InitOpts {
@@ -64,6 +65,76 @@ export async function askHidden(prompt: string, stdin: NodeJS.ReadableStream = p
     stdin.on("data", onData);
     stdin.resume();
   });
+}
+
+// ---------- provider selection (first init step) ----------
+
+// Invalid input re-prompts with the same listing this many times, then the
+// current selection stands – the same one-shot-with-default spirit as the
+// other init prompts, just bounded.
+const SELECTION_ATTEMPTS = 3;
+
+// Pure: turn a selection answer into provider ids. Tokens are 1-based numbers
+// into ALL_PROVIDER_IDS and/or literal ids, comma or space separated; empty
+// input keeps the current selection; any invalid token returns null (the
+// caller's re-prompt signal). The result follows the canonical provider order.
+export function parseProviderSelection(input: string, current: readonly ProviderId[]): ProviderId[] | null {
+  const trimmed = input.trim();
+  if (trimmed === "") return [...current];
+  const picked = new Set<ProviderId>();
+  for (const token of trimmed.split(/[,\s]+/).filter((t) => t !== "")) {
+    let id: ProviderId | null = null;
+    if (/^\d+$/.test(token)) {
+      const n = Number(token);
+      if (n >= 1 && n <= ALL_PROVIDER_IDS.length) id = ALL_PROVIDER_IDS[n - 1];
+    } else if ((ALL_PROVIDER_IDS as readonly string[]).includes(token)) {
+      id = token as ProviderId;
+    }
+    if (!id) return null; // invalid token
+    picked.add(id);
+  }
+  return ALL_PROVIDER_IDS.filter((id) => picked.has(id));
+}
+
+// The numbered listing shown before the selection prompt – [x] marks a
+// currently selected provider. Reprinted verbatim after invalid input.
+function selectionListing(current: readonly ProviderId[]): string[] {
+  const rows = ALL_PROVIDER_IDS.map((id, i) => `  [${current.includes(id) ? "x" : " "}] ${i + 1} ${id}`);
+  return ["Which providers does subtrk track?", ...rows];
+}
+
+// First init step: pick which providers this machine tracks. Uses the shared
+// raw-mode reader, so a non-TTY stdin prints its skip note and resolves to the
+// current selection; invalid input re-prompts with the same listing. Null
+// means "no change" (skip or attempts exhausted).
+export async function askProviderSelection(
+  current: readonly ProviderId[],
+  stdin: NodeJS.ReadableStream = process.stdin,
+): Promise<ProviderId[] | null> {
+  for (let attempt = 0; attempt < SELECTION_ATTEMPTS; attempt++) {
+    for (const line of selectionListing(current)) console.log(line);
+    const answer = await askHidden(
+      "Providers to track (numbers or ids, e.g. `1 3 5`; empty keeps the current selection): ",
+      stdin,
+    );
+    const parsed = parseProviderSelection(answer, current);
+    if (parsed) return parsed;
+    console.log(`  invalid entry – use 1-${ALL_PROVIDER_IDS.length} or ids: ${ALL_PROVIDER_IDS.join(", ")}`);
+  }
+  return null;
+}
+
+// The selection persists as config.json `{ enabled: [...] }` – the same file
+// loadConfig/collectStatus read. Plain stringify + newline, best effort: a
+// lost write costs a re-run of init, never an error. Deleting the file
+// restores "all providers".
+export function saveProviderSelection(subtrkDir: string, enabled: readonly ProviderId[]): boolean {
+  try {
+    writeFileSync(join(subtrkDir, "config.json"), `${JSON.stringify({ enabled: [...enabled] }, null, 2)}\n`);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ---------- env file ----------
@@ -286,207 +357,241 @@ export async function runInit(opts: InitOpts = {}): Promise<void> {
 
   console.log("subtrk init – checking providers\n");
 
-  // 1. Claude: token present AND (unexpired OR refreshable).
-  const cred = readJson(join(homedir(), ".claude", ".credentials.json"));
-  const claude = claudeAuth(cred, Date.now());
-  if (claude.ok) {
-    console.log("[ok]      claude – token present, unexpired");
-  } else if (claude.refreshToken) {
-    console.log("[ok]      claude – token expired, subtrk will self-refresh on next status");
-  } else {
-    missing.push("claude – run `claude /login`");
-    console.log("[missing] claude – no readable unexpired token in ~/.claude/.credentials.json");
+  // 0. Provider selection: which of the six does this machine actually use?
+  //    Stored as ~/.subtrk/config.json `{ enabled: [...] }` – the same gate
+  //    collectStatus reads – and honored by every step below. Re-run init (or
+  //    edit the file) to change it; deleting the file restores all providers.
+  let enabled: ProviderId[];
+  try {
+    enabled = loadConfig(subtrkDir).enabled;
+  } catch {
+    console.log("[note]    ~/.subtrk/config.json is unreadable – defaulting to all providers");
+    enabled = [...ALL_PROVIDER_IDS];
+  }
+  const picked = await askProviderSelection(enabled);
+  const selected = new Set<ProviderId>(picked ?? enabled);
+  if (picked && (picked.length !== enabled.length || picked.some((id) => !enabled.includes(id)))) {
+    if (saveProviderSelection(subtrkDir, picked)) {
+      console.log(`[ok]      selection saved to ~/.subtrk/config.json – tracking: ${picked.join(", ")}`);
+    } else {
+      console.log("[note]    could not write ~/.subtrk/config.json – selection applies to this run only");
+    }
   }
 
-  // 2. GLM: ZCode config key present.
-  const zcfg = readJson(join(homedir(), ".zcode", "cli", "config.json")) as {
-    provider?: { zai?: { apiKey?: unknown } };
-  } | null;
-  if (typeof zcfg?.provider?.zai?.apiKey === "string" && zcfg.provider.zai.apiKey.length > 0) {
-    console.log("[ok]      glm – ZCode config key present");
-  } else {
-    missing.push("glm – log in via ZCode, then re-run subtrk init");
-    console.log("[missing] glm – no provider.zai.apiKey in ~/.zcode/cli/config.json");
+  // 1. Claude: token present AND (unexpired OR refreshable). Selected only.
+  if (selected.has("claude")) {
+    const cred = readJson(join(homedir(), ".claude", ".credentials.json"));
+    const claude = claudeAuth(cred, Date.now());
+    if (claude.ok) {
+      console.log("[ok]      claude – token present, unexpired");
+    } else if (claude.refreshToken) {
+      console.log("[ok]      claude – token expired, subtrk will self-refresh on next status");
+    } else {
+      missing.push("claude – run `claude /login`");
+      console.log("[missing] claude – no readable unexpired token in ~/.claude/.credentials.json");
+    }
+  }
+
+  // 2. GLM: ZCode config key present. Selected only.
+  if (selected.has("glm")) {
+    const zcfg = readJson(join(homedir(), ".zcode", "cli", "config.json")) as {
+      provider?: { zai?: { apiKey?: unknown } };
+    } | null;
+    if (typeof zcfg?.provider?.zai?.apiKey === "string" && zcfg.provider.zai.apiKey.length > 0) {
+      console.log("[ok]      glm – ZCode config key present");
+    } else {
+      missing.push("glm – log in via ZCode, then re-run subtrk init");
+      console.log("[missing] glm – no provider.zai.apiKey in ~/.zcode/cli/config.json");
+    }
   }
 
   // 3. Alibaba: `bl` on PATH? offer install, then the verified bl 2.0.1 flow:
   //    Token Plan API key, console browser login (AK fallback), then a usage
   //    read-back so [ok] is only ever printed when usage is actually readable.
-  let bl = findOnPath("bl");
-  if (!bl && (await askYesNo("alibaba – `bl` not found on PATH. Install bailian-cli now?"))) {
-    await runShellLiteral("npm i -g bailian-cli");
-    bl = findOnPath("bl");
-  }
-  if (bl) {
-    // bl stores the plan key from any past `bl auth login --api-key` – when it is
-    // already there, skip the secret prompt entirely and reuse it.
-    if (blHasPlanKey(readJson(join(homedir(), ".bailian", "config.json")))) {
-      console.log("[ok]      alibaba – Token Plan API key already stored in bl config – reusing it");
-    } else {
-      const key = await askHidden(
-        "alibaba – Store your Token Plan API key now? (sk-sp-... from the subscription overview page; hidden, empty to skip): ",
-      );
-      if (key && safeArg(key)) {
-        registerSecret(key);
-        const r = await runBl(["auth", "login", "--api-key", key]);
-        console.log(
-          r.code === 0
-            ? "[ok]      alibaba – API key login succeeded"
-            : "[failed]  alibaba – API key login failed (bl exited non-zero)",
+  //    Selected only – no prompts or nagging otherwise.
+  if (selected.has("alibaba")) {
+    let bl = findOnPath("bl");
+    if (!bl && (await askYesNo("alibaba – `bl` not found on PATH. Install bailian-cli now?"))) {
+      await runShellLiteral("npm i -g bailian-cli");
+      bl = findOnPath("bl");
+    }
+    if (bl) {
+      // bl stores the plan key from any past `bl auth login --api-key` – when it is
+      // already there, skip the secret prompt entirely and reuse it.
+      if (blHasPlanKey(readJson(join(homedir(), ".bailian", "config.json")))) {
+        console.log("[ok]      alibaba – Token Plan API key already stored in bl config – reusing it");
+      } else {
+        const key = await askHidden(
+          "alibaba – Store your Token Plan API key now? (sk-sp-... from the subscription overview page; hidden, empty to skip): ",
         );
-      } else if (key) {
-        console.log(
-          "[failed]  alibaba – API key login skipped: key contains characters outside the expected sk-sp key set",
-        );
+        if (key && safeArg(key)) {
+          registerSecret(key);
+          const r = await runBl(["auth", "login", "--api-key", key]);
+          console.log(
+            r.code === 0
+              ? "[ok]      alibaba – API key login succeeded"
+              : "[failed]  alibaba – API key login failed (bl exited non-zero)",
+          );
+        } else if (key) {
+          console.log(
+            "[failed]  alibaba – API key login skipped: key contains characters outside the expected sk-sp key set",
+          );
+        }
       }
-    }
-    const site = await askConsoleSite();
-    const consoleArgs =
-      site === "international"
-        ? ["auth", "login", "--console", "--console-site", "international"]
-        : ["auth", "login", "--console"];
-    const consoleRes = await runBl(consoleArgs, { stdio: "inherit" });
-    if (consoleRes.code === 0) {
-      console.log("[ok]      alibaba – console login succeeded");
-    } else {
-      console.log(`[failed]  alibaba – console login failed (exit ${consoleRes.code})`);
-      const akId = await askHidden("alibaba – AccessKey ID (hidden, empty to skip fallback): ");
-      const akSecret = akId ? await askHidden("alibaba – AccessKey Secret (hidden): ") : "";
-      if (akId && akSecret && safeArg(akId) && safeArg(akSecret)) {
-        registerSecret(akId);
-        registerSecret(akSecret);
-        const r = await runBl([
-          "auth",
-          "login",
-          "--open-api",
-          "--access-key-id",
-          akId,
-          "--access-key-secret",
-          akSecret,
-        ]);
-        console.log(
-          r.code === 0
-            ? "[ok]      alibaba – access-key login succeeded"
-            : "[failed]  alibaba – access-key login failed (bl exited non-zero)",
-        );
-      } else if (akId && akSecret) {
-        console.log(
-          "[failed]  alibaba – access-key login skipped: value contains characters outside the expected key set",
-        );
+      const site = await askConsoleSite();
+      const consoleArgs =
+        site === "international"
+          ? ["auth", "login", "--console", "--console-site", "international"]
+          : ["auth", "login", "--console"];
+      const consoleRes = await runBl(consoleArgs, { stdio: "inherit" });
+      if (consoleRes.code === 0) {
+        console.log("[ok]      alibaba – console login succeeded");
+      } else {
+        console.log(`[failed]  alibaba – console login failed (exit ${consoleRes.code})`);
+        const akId = await askHidden("alibaba – AccessKey ID (hidden, empty to skip fallback): ");
+        const akSecret = akId ? await askHidden("alibaba – AccessKey Secret (hidden): ") : "";
+        if (akId && akSecret && safeArg(akId) && safeArg(akSecret)) {
+          registerSecret(akId);
+          registerSecret(akSecret);
+          const r = await runBl([
+            "auth",
+            "login",
+            "--open-api",
+            "--access-key-id",
+            akId,
+            "--access-key-secret",
+            akSecret,
+          ]);
+          console.log(
+            r.code === 0
+              ? "[ok]      alibaba – access-key login succeeded"
+              : "[failed]  alibaba – access-key login failed (bl exited non-zero)",
+          );
+        } else if (akId && akSecret) {
+          console.log(
+            "[failed]  alibaba – access-key login skipped: value contains characters outside the expected key set",
+          );
+        }
       }
-    }
-    // Verify via the raw gateway passthrough (bl usage token-plan drops the
-    // monthly fields – formatter bug as of bl 2.0.1).
-    const verify = await runBl([
-      "console",
-      "call",
-      "--api",
-      "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage",
-      "--data",
-      "{}",
-      "--output",
-      "json",
-    ]);
-    const verdict = classifyBlVerify(verify.code, verify.stderr, scrub, verify.stdout);
-    if (verdict.ok) {
-      console.log("[ok]      alibaba – logged in, usage readable");
+      // Verify via the raw gateway passthrough (bl usage token-plan drops the
+      // monthly fields – formatter bug as of bl 2.0.1).
+      const verify = await runBl([
+        "console",
+        "call",
+        "--api",
+        "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage",
+        "--data",
+        "{}",
+        "--output",
+        "json",
+      ]);
+      const verdict = classifyBlVerify(verify.code, verify.stderr, scrub, verify.stdout);
+      if (verdict.ok) {
+        console.log("[ok]      alibaba – logged in, usage readable");
+      } else {
+        missing.push(
+          "alibaba – log in: `bl auth login --api-key <sk-sp-key>` or `bl auth login --console`, then re-run subtrk init",
+        );
+        console.log(`[failed]  alibaba – ${verdict.message}`);
+      }
     } else {
-      missing.push(
-        "alibaba – log in: `bl auth login --api-key <sk-sp-key>` or `bl auth login --console`, then re-run subtrk init",
-      );
-      console.log(`[failed]  alibaba – ${verdict.message}`);
+      missing.push("alibaba – npm i -g bailian-cli, then subtrk init");
+      console.log("[missing] alibaba – bl not installed");
     }
-  } else {
-    missing.push("alibaba – npm i -g bailian-cli, then subtrk init");
-    console.log("[missing] alibaba – bl not installed");
   }
 
   // 4. Google: legacy file lineages, else (win32) agy's keyring target via cmdkey.
   //    Only presence is checked here – the same first-match order the probe uses
-  //    decides which source wins.
-  const googleFile =
-    existsSync(join(homedir(), ".gemini", "oauth_creds.json")) ||
-    existsSync(join(homedir(), ".gemini", "antigravity-cli", "antigravity-oauth-token"));
-  let googleKeyring = false;
-  if (!googleFile && process.platform === "win32") googleKeyring = await hasAgyKeyring();
-  if (googleFile || googleKeyring) {
-    console.log("[ok]      google – credential found (agy keyring or legacy gemini files)");
-  } else {
-    missing.push("google – log in once with agy, then re-run subtrk init");
-    console.log("[missing] google – no credential found");
-    console.log(
-      "          install agy: irm https://antigravity.google/cli/install.ps1 | iex – then launch it once to log in",
-    );
-  }
-  // Google token refresh needs the public OAuth client constants; they live in
-  // ~/.subtrk/env (not in the repo). The Antigravity pair powers the keyring
-  // lineage's self-refresh and the legacy antigravity refresh so it is always
-  // written; the gemini pair only matters when a legacy gemini file credential exists.
-  const have = {
-    id: getSecret("GOOGLE_CLIENT_ID", envPath),
-    secret: getSecret("GOOGLE_CLIENT_SECRET", envPath),
-    agyId: getSecret("ANTIGRAVITY_CLIENT_ID", envPath),
-    agySecret: getSecret("ANTIGRAVITY_CLIENT_SECRET", envPath),
-  };
-  if ((googleFile && (!have.id || !have.secret)) || !have.agyId || !have.agySecret) {
-    const fetched = await fetchGoogleClientConstants();
-    if (fetched) {
-      updateEnvFile(envPath, fetched);
-      console.log("[ok]      google – OAuth client constants fetched from upstream into ~/.subtrk/env");
+  //    decides which source wins. Selected only (constants fetch included).
+  if (selected.has("google")) {
+    const googleFile =
+      existsSync(join(homedir(), ".gemini", "oauth_creds.json")) ||
+      existsSync(join(homedir(), ".gemini", "antigravity-cli", "antigravity-oauth-token"));
+    let googleKeyring = false;
+    if (!googleFile && process.platform === "win32") googleKeyring = await hasAgyKeyring();
+    if (googleFile || googleKeyring) {
+      console.log("[ok]      google – credential found (agy keyring or legacy gemini files)");
     } else {
-      console.log("[note]    google – could not fetch OAuth client constants");
+      missing.push("google – log in once with agy, then re-run subtrk init");
+      console.log("[missing] google – no credential found");
       console.log(
-        "          token refresh needs GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ANTIGRAVITY_CLIENT_ID / ANTIGRAVITY_CLIENT_SECRET in ~/.subtrk/env",
+        "          install agy: irm https://antigravity.google/cli/install.ps1 | iex – then launch it once to log in",
       );
-      console.log(
-        "          (public values – gemini-cli's packages/core/src/code_assist/oauth2.ts and CLIProxyAPI's internal/auth/antigravity/constants.go)",
-      );
+    }
+    // Google token refresh needs the public OAuth client constants; they live in
+    // ~/.subtrk/env (not in the repo). The Antigravity pair powers the keyring
+    // lineage's self-refresh and the legacy antigravity refresh so it is always
+    // written; the gemini pair only matters when a legacy gemini file credential exists.
+    const have = {
+      id: getSecret("GOOGLE_CLIENT_ID", envPath),
+      secret: getSecret("GOOGLE_CLIENT_SECRET", envPath),
+      agyId: getSecret("ANTIGRAVITY_CLIENT_ID", envPath),
+      agySecret: getSecret("ANTIGRAVITY_CLIENT_SECRET", envPath),
+    };
+    if ((googleFile && (!have.id || !have.secret)) || !have.agyId || !have.agySecret) {
+      const fetched = await fetchGoogleClientConstants();
+      if (fetched) {
+        updateEnvFile(envPath, fetched);
+        console.log("[ok]      google – OAuth client constants fetched from upstream into ~/.subtrk/env");
+      } else {
+        console.log("[note]    google – could not fetch OAuth client constants");
+        console.log(
+          "          token refresh needs GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ANTIGRAVITY_CLIENT_ID / ANTIGRAVITY_CLIENT_SECRET in ~/.subtrk/env",
+        );
+        console.log(
+          "          (public values – gemini-cli's packages/core/src/code_assist/oauth2.ts and CLIProxyAPI's internal/auth/antigravity/constants.go)",
+        );
+      }
     }
   }
 
-  // 5. opencode: key in env/~/.subtrk/env, or auth.json.
-  const ocKey = getSecret("OPENCODE_API_KEY", envPath);
-  if (ocKey || existsSync(join(homedir(), ".local", "share", "opencode", "auth.json"))) {
-    console.log("[ok]      opencode – key or auth.json present");
-  } else if (await askYesNo("opencode – no key found. Store OPENCODE_API_KEY in ~/.subtrk/env?")) {
-    const key = await askHidden("OPENCODE_API_KEY (hidden): ");
-    if (key) {
-      registerSecret(key);
-      updateEnvFile(envPath, { OPENCODE_API_KEY: key });
-      console.log("[ok]      opencode – key stored in ~/.subtrk/env");
+  // 5. opencode: key in env/~/.subtrk/env, or auth.json. Selected only.
+  if (selected.has("opencode")) {
+    const ocKey = getSecret("OPENCODE_API_KEY", envPath);
+    if (ocKey || existsSync(join(homedir(), ".local", "share", "opencode", "auth.json"))) {
+      console.log("[ok]      opencode – key or auth.json present");
+    } else if (await askYesNo("opencode – no key found. Store OPENCODE_API_KEY in ~/.subtrk/env?")) {
+      const key = await askHidden("OPENCODE_API_KEY (hidden): ");
+      if (key) {
+        registerSecret(key);
+        updateEnvFile(envPath, { OPENCODE_API_KEY: key });
+        console.log("[ok]      opencode – key stored in ~/.subtrk/env");
+      } else {
+        missing.push("opencode – no key entered (run subtrk init or opencode auth login)");
+        console.log("[missing] opencode – no key entered");
+      }
     } else {
-      missing.push("opencode – no key entered (run subtrk init or opencode auth login)");
-      console.log("[missing] opencode – no key entered");
+      missing.push("opencode – run subtrk init or opencode auth login");
+      console.log("[missing] opencode – no key or auth.json");
     }
-  } else {
-    missing.push("opencode – run subtrk init or opencode auth login");
-    console.log("[missing] opencode – no key or auth.json");
   }
 
-  // 6. OpenRouter: hidden-input prompts, written to ~/.subtrk/env.
-  const updates: Record<string, string> = {};
-  if (getSecret("OPENROUTER_API_KEY", envPath)) {
-    console.log("[ok]      openrouter – OPENROUTER_API_KEY already stored");
-  } else {
-    const key = await askHidden("OPENROUTER_API_KEY (hidden, empty to skip): ");
-    if (key) {
-      registerSecret(key);
-      updates.OPENROUTER_API_KEY = key;
-      console.log("[ok]      openrouter – OPENROUTER_API_KEY stored in ~/.subtrk/env");
+  // 6. OpenRouter: hidden-input prompts, written to ~/.subtrk/env. Selected only.
+  if (selected.has("openrouter")) {
+    const updates: Record<string, string> = {};
+    if (getSecret("OPENROUTER_API_KEY", envPath)) {
+      console.log("[ok]      openrouter – OPENROUTER_API_KEY already stored");
     } else {
-      missing.push("openrouter – run subtrk init to store OPENROUTER_API_KEY");
-      console.log("[missing] openrouter – no key entered");
+      const key = await askHidden("OPENROUTER_API_KEY (hidden, empty to skip): ");
+      if (key) {
+        registerSecret(key);
+        updates.OPENROUTER_API_KEY = key;
+        console.log("[ok]      openrouter – OPENROUTER_API_KEY stored in ~/.subtrk/env");
+      } else {
+        missing.push("openrouter – run subtrk init to store OPENROUTER_API_KEY");
+        console.log("[missing] openrouter – no key entered");
+      }
     }
-  }
-  if (!getSecret("OPENROUTER_MANAGEMENT_KEY", envPath)) {
-    const mgmt = await askHidden("OPENROUTER_MANAGEMENT_KEY (hidden, optional, empty to skip): ");
-    if (mgmt) {
-      registerSecret(mgmt);
-      updates.OPENROUTER_MANAGEMENT_KEY = mgmt;
-      console.log("[ok]      openrouter – OPENROUTER_MANAGEMENT_KEY stored in ~/.subtrk/env");
+    if (!getSecret("OPENROUTER_MANAGEMENT_KEY", envPath)) {
+      const mgmt = await askHidden("OPENROUTER_MANAGEMENT_KEY (hidden, optional, empty to skip): ");
+      if (mgmt) {
+        registerSecret(mgmt);
+        updates.OPENROUTER_MANAGEMENT_KEY = mgmt;
+        console.log("[ok]      openrouter – OPENROUTER_MANAGEMENT_KEY stored in ~/.subtrk/env");
+      }
     }
+    if (Object.keys(updates).length > 0) updateEnvFile(envPath, updates);
   }
-  if (Object.keys(updates).length > 0) updateEnvFile(envPath, updates);
 
   console.log(`\n${missing.length === 0 ? "all providers ready" : "still missing:"}`);
   for (const item of missing) console.log(`  - ${item}`);
