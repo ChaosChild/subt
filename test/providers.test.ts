@@ -16,6 +16,7 @@ import { claudeAuth, parseClaudeUsage } from "../src/providers/claude.ts";
 import { glmAuth, parseGlmQuota } from "../src/providers/glm.ts";
 import {
   googleExpired,
+  googlePreFlight,
   parseAgyKeyringBlob,
   parseAntigravityTokenFile,
   parseGeminiCreds,
@@ -344,6 +345,19 @@ test("google googleExpired honours the 60s skew and unknown expiry", () => {
   assert.equal(googleExpired({ accessToken: "t", lineage: "gemini", expiresAtMs: now + 120_000 }, now), false);
   assert.equal(googleExpired({ accessToken: "t", lineage: "gemini", expiresAtMs: now + 30_000 }, now), true);
   assert.equal(googleExpired({ accessToken: "t", lineage: "gemini" }, now), false);
+});
+
+test("google googlePreFlight: expired keyring creds fail fast, future or absent expiry passes", () => {
+  const now = 1_800_000_000_000;
+  const expired = googlePreFlight({ accessToken: "t", lineage: "agy-keyring", expiresAtMs: now - 1000 }, now);
+  assert.ok(expired);
+  assert.equal(expired.kind, "expired-token");
+  assert.equal(expired.message, "token rejected (401, also after one credential re-read)");
+  assert.equal(expired.hint, "launch agy once so it refreshes its token, then re-run");
+  assert.equal(expired.remedy, "re-login inside agy");
+
+  assert.equal(googlePreFlight({ accessToken: "t", lineage: "agy-keyring", expiresAtMs: now + 120_000 }, now), null);
+  assert.equal(googlePreFlight({ accessToken: "t", lineage: "agy-keyring" }, now), null);
 });
 
 // ---- opencode --------------------------------------------------------------
