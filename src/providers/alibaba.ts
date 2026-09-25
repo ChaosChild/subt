@@ -5,9 +5,12 @@
 // Fixed literal commands; nothing is ever interpolated into a command line.
 
 import { exec, execFile } from "node:child_process";
-import type { Credits, ProviderError, ProviderModule, ProviderResult, Window } from "../core.ts";
+import type { Credits, ProviderError, ProviderModule, ProviderResult, RefreshResult, Window } from "../core.ts";
 
 const BL_TIMEOUT_MS = 10_000;
+// The console re-login blocks on the browser callback and bl has its own idle
+// timeout – give it a generous budget instead of the probe's 10s.
+const REFRESH_TIMEOUT_MS = 300_000;
 const API_USAGE = "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage";
 const API_SUBSCRIPTION = "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/subscription";
 const API_QUOTA_CONFIG = "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/quota-config";
@@ -27,7 +30,7 @@ interface BlRun {
   timedOut: boolean;
 }
 
-function runBl(literal: string, args: readonly string[]): Promise<BlRun> {
+function runBl(literal: string, args: readonly string[], timeoutMs: number = BL_TIMEOUT_MS): Promise<BlRun> {
   return new Promise((resolve) => {
     const finish = (
       err: (Error & { code?: string | number; killed?: boolean }) | null,
@@ -46,9 +49,9 @@ function runBl(literal: string, args: readonly string[]): Promise<BlRun> {
     };
     if (process.platform === "win32") {
       // .cmd shim requires the shell; the literal is a fixed string, never interpolated.
-      exec(literal, { timeout: BL_TIMEOUT_MS, windowsHide: true }, finish);
+      exec(literal, { timeout: timeoutMs, windowsHide: true }, finish);
     } else {
-      execFile(args[0], args.slice(1), { timeout: BL_TIMEOUT_MS }, finish);
+      execFile(args[0], args.slice(1), { timeout: timeoutMs }, finish);
     }
   });
 }
@@ -185,6 +188,7 @@ async function probeInner(): Promise<ProviderResult> {
           kind: "no-credentials",
           message: "bl console session missing or expired",
           hint: "run subtrk init (bl auth login --console)",
+          remedy: "subtrk auth refresh --provider alibaba",
         },
         fetchedAt,
       );
@@ -229,9 +233,28 @@ async function probeInner(): Promise<ProviderResult> {
   return result;
 }
 
+// ---------- interactive refresh (subtrk auth refresh / POST /api/refresh) ----------
+
+// Fixed literal – the same console re-login init runs; never interpolated.
+const CONSOLE_LOGIN_LITERAL = "bl auth login --console --console-site international";
+const CONSOLE_LOGIN_ARGS = ["bl", "auth", "login", "--console", "--console-site", "international"];
+
+// Pure: spawn outcome -> refresh result. The message is a fixed literal;
+// stdout/stderr are dropped and never become part of the result.
+export function mapRefreshOutcome(run: Pick<BlRun, "ok" | "toolMissing">): RefreshResult {
+  if (run.ok) return { ok: true, message: "console session re-authorised" };
+  if (run.toolMissing) return { ok: false, message: "bl not found – install bailian-cli" };
+  return { ok: false, message: "console login failed – run subtrk init" };
+}
+
+async function refresh(): Promise<RefreshResult> {
+  return mapRefreshOutcome(await runBl(CONSOLE_LOGIN_LITERAL, CONSOLE_LOGIN_ARGS, REFRESH_TIMEOUT_MS));
+}
+
 const provider: ProviderModule = {
   id: "alibaba",
   ttlMs: 300_000,
+  refresh,
   probe: () =>
     probeInner().catch((err: unknown) => ({
       id: "alibaba" as const,

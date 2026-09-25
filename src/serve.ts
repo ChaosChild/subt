@@ -1,21 +1,34 @@
 // serve.ts – `subtrk serve` (M2): the localhost web console backend.
 // Loopback-only HTTP: the browser shell (src/console.html) is the one static
-// route; /api/status replays `subtrk status --json` behind a per-run Bearer
-// token. No CORS headers, ever – same-origin plus the custom Authorization
-// header (preflight) is the cross-site defense. Probe work inherits core's
-// 10s per-provider budget, so every request is bounded.
+// route; /api/status replays `subtrk status --json` and /api/refresh re-runs a
+// provider's interactive login, both behind the per-run Bearer token. No CORS
+// headers, ever – same-origin plus the custom Authorization header (preflight)
+// is the cross-site defense. Probe work inherits core's 10s per-provider
+// budget, so every request is bounded; refresh spawns are the provider
+// modules' own (alibaba's console login gets a 300s budget) and their output
+// is never forwarded – responses carry fixed-literal messages only.
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
-import { collectStatus, errorMessage, type ProviderModule, scrubValue } from "./core.ts";
+import {
+  collectStatus,
+  errorMessage,
+  type ProviderModule,
+  type RefreshResult,
+  removeCachedProvider,
+  SUBTRK_DIR,
+  scrubValue,
+} from "./core.ts";
+import { allProviders, refreshableProviders } from "./providers/index.ts";
 
 export interface ServeDeps {
   providers?: ProviderModule[]; // stub registry (tests)
   subtrkDir?: string; // override ~/.subtrk (tests)
   consoleHtmlPath?: string; // shell served at / (default: src/console.html next to this module)
   port?: number; // default 0 – random ephemeral port
+  refresh?: (id: string) => Promise<RefreshResult>; // stub seam (tests); default: module registry
 }
 
 export interface ServeHandle {
@@ -70,18 +83,28 @@ export async function startConsole(deps: ServeDeps = {}): Promise<ServeHandle> {
     shell = null; // / answers 404 text until the shell file exists
   }
 
+  // Single refresh per provider at a time – a second request for the same id
+  // gets 409 while one is in flight; other providers keep running.
+  const inFlight = new Map<string, Promise<RefreshResult>>();
+  const runRefresh: (id: string) => Promise<RefreshResult> =
+    deps.refresh ??
+    ((id) => {
+      const mod = allProviders.find((m) => m.id === id);
+      return mod?.refresh ? mod.refresh() : Promise.resolve({ ok: false, message: "no interactive refresh" });
+    });
+
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     try {
       if (!hostAllowed(req.headers.host)) {
         respond(res, 403, JSON.stringify({ error: "forbidden host" }));
         return;
       }
-      if (req.method !== "GET") {
-        respond(res, 405, JSON.stringify({ error: "method not allowed" }));
-        return;
-      }
       const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
       if (path === "/") {
+        if (req.method !== "GET") {
+          respond(res, 405, JSON.stringify({ error: "method not allowed" }));
+          return;
+        }
         if (shell === null) {
           respond(res, 404, "console shell missing", "text/plain");
           return;
@@ -90,6 +113,10 @@ export async function startConsole(deps: ServeDeps = {}): Promise<ServeHandle> {
         return;
       }
       if (path === "/api/status") {
+        if (req.method !== "GET") {
+          respond(res, 405, JSON.stringify({ error: "method not allowed" }));
+          return;
+        }
         if (!tokenOk(req.headers.authorization, token)) {
           respond(res, 401, JSON.stringify({ error: "unauthorized" }));
           return;
@@ -99,6 +126,40 @@ export async function startConsole(deps: ServeDeps = {}): Promise<ServeHandle> {
           (err: unknown) => {
             console.error(`subtrk: ${errorMessage(err)}`);
             respond(res, 500, JSON.stringify({ error: "status unavailable" }));
+          },
+        );
+        return;
+      }
+      if (path === "/api/refresh") {
+        if (req.method !== "POST") {
+          respond(res, 405, JSON.stringify({ error: "method not allowed" }), "application/json", { allow: "POST" });
+          return;
+        }
+        if (!tokenOk(req.headers.authorization, token)) {
+          respond(res, 401, JSON.stringify({ error: "unauthorized" }));
+          return;
+        }
+        const id = new URL(req.url ?? "/", "http://127.0.0.1").searchParams.get("provider") ?? "";
+        if (!(refreshableProviders() as readonly string[]).includes(id)) {
+          respond(res, 400, JSON.stringify({ error: "unknown or non-refreshable provider" }));
+          return;
+        }
+        if (inFlight.has(id)) {
+          respond(res, 409, JSON.stringify({ error: "refresh already running" }));
+          return;
+        }
+        const run = runRefresh(id).finally(() => inFlight.delete(id));
+        inFlight.set(id, run);
+        void run.then(
+          (r) => {
+            if (r.ok) removeCachedProvider(deps.subtrkDir ?? SUBTRK_DIR, id);
+            // 200 even when ok:false – the endpoint worked; the body carries
+            // the action's outcome as a fixed-literal message.
+            respond(res, 200, JSON.stringify(scrubValue(r)));
+          },
+          (err: unknown) => {
+            console.error(`subtrk: ${errorMessage(err)}`);
+            respond(res, 500, JSON.stringify({ error: "refresh failed" }));
           },
         );
         return;

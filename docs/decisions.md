@@ -111,3 +111,25 @@ writes the merged credential back atomically. The refresh **rotates the
 refresh token** – the new one must be persisted or the file goes stale for
 Claude Code itself; in-memory use continues if write-back fails. On failure,
 degrade to `expired-token` with a "start Claude Code once" hint.
+
+## D9 · Interactive re-auth – `subtrk auth refresh` and `POST /api/refresh`
+
+Console sessions without self-refresh (alibaba's bl console login) need a
+human in a browser. `subtrk auth refresh --provider <id>` runs the provider
+module's `refresh()`: the provider's own interactive login as a fixed-literal
+spawn with a generous timeout, whose stdout/stderr are never captured – the
+result is a fixed-literal message, never subprocess output and never a
+secret. The web console exposes the same action as
+`POST /api/refresh?provider=<id>` behind the same per-run Bearer token as
+`/api/status`.
+
+This amends the GET-only posture of the serve decision: the dashboard is no
+longer strictly read-only. Accepted trade-off: the token holder can trigger a
+browser login on the host. No credential is exposed in return – the endpoint
+answers only fixed literals, the provider allowlist rejects non-refreshable
+ids with 400, single-flight per provider returns 409 on overlap, and the
+loopback binding, host allowlist, CSP and no-CORS posture are unchanged. A
+successful refresh drops the provider's cache entry so the next status
+re-probes. Google is deliberately not refreshable – keyring tokens stay
+agy-owned (D7) – and errors that a non-refreshable provider emits carry a
+`remedy` line naming the fix instead.

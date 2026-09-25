@@ -36,6 +36,7 @@ export interface ProviderError {
   kind: ErrorKind;
   message: string;
   hint?: string;
+  remedy?: string; // exact CLI line an agent/operator can run (fixed literal)
   retryAfterMs?: number;
   status?: number;
 }
@@ -65,13 +66,21 @@ export interface ProviderResult {
   windows?: Window[];
   credits?: Credits;
   note?: string;
+  refreshable?: true; // module supports interactive refresh (subtrk auth refresh / POST /api/refresh)
   error?: ProviderError;
+}
+
+// Fixed-literal outcome of an interactive refresh – never subprocess output.
+export interface RefreshResult {
+  ok: boolean;
+  message: string;
 }
 
 export interface ProviderModule {
   id: ProviderId;
   ttlMs: number;
   probe(): Promise<ProviderResult>; // NEVER throws
+  refresh?: () => Promise<RefreshResult>; // interactive re-auth (browser/login flow)
 }
 
 export interface StatusOutput {
@@ -323,6 +332,33 @@ export async function writeCacheEntry(
     }
   } catch {
     /* silent */
+  }
+}
+
+// Best-effort removal of one provider's cache entry (after an interactive
+// refresh): same temp+rename discipline and silent give-up as writeCacheEntry –
+// a lost delete costs one stale read, never an error.
+export function removeCachedProvider(subtrkDir: string, id: string): void {
+  const cachePath = join(subtrkDir, "cache.json");
+  try {
+    const parsed = JSON.parse(readFileSync(cachePath, "utf8")) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || parsed.schemaVersion !== SCHEMA_VERSION) return;
+    if (!(id in parsed)) return;
+    delete parsed[id];
+    const payload = JSON.stringify({ ...parsed, schemaVersion: SCHEMA_VERSION });
+    const tmp = `${cachePath}.${process.pid}.tmp`;
+    try {
+      writeFileSync(tmp, payload);
+      renameSync(tmp, cachePath);
+    } catch {
+      try {
+        rmSync(tmp, { force: true });
+      } catch {
+        /* best effort */
+      }
+    }
+  } catch {
+    /* absent or corrupt – nothing to remove */
   }
 }
 
@@ -615,14 +651,18 @@ export async function collectStatus(
     ),
   );
   const results: ProviderResult[] = settled.map((s, i) => {
-    if (s.status === "fulfilled") return s.value;
-    return {
-      id: selected[i].id,
-      ok: false,
-      stale: false,
-      fetchedAt: new Date().toISOString(),
-      error: { kind: "parse-failure", message: `internal error: ${errorMessage(s.reason)}` },
-    };
+    const base: ProviderResult =
+      s.status === "fulfilled"
+        ? s.value
+        : {
+            id: selected[i].id,
+            ok: false,
+            stale: false,
+            fetchedAt: new Date().toISOString(),
+            error: { kind: "parse-failure", message: `internal error: ${errorMessage(s.reason)}` },
+          };
+    // Annotate from the module (not the cached blob) so cache hits carry it too.
+    return typeof selected[i].refresh === "function" ? { ...base, refreshable: true } : base;
   });
   const ttlById = new Map(selected.map((m) => [m.id, m.ttlMs] as const));
   const okTtls = selected.filter((_, i) => results[i].ok).map((m) => m.ttlMs);

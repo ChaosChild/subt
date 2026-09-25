@@ -363,6 +363,7 @@ async function refreshAccessToken(creds: GoogleCreds): Promise<RefreshOutcome> {
           kind: "expired-token",
           message: "token refresh rejected (invalid_client)",
           hint: "log in again with agy",
+          remedy: "re-login inside agy",
         },
       };
     }
@@ -417,6 +418,7 @@ async function probeInner(): Promise<ProviderResult> {
           kind: "expired-token",
           message: "access token expired and no refresh_token in the credential file",
           hint: "log in again with agy",
+          remedy: "re-login inside agy",
         },
         fetchedAt,
       );
@@ -444,6 +446,7 @@ async function probeInner(): Promise<ProviderResult> {
           kind: "expired-token",
           message: "token rejected (401, also after one credential re-read)",
           hint: "launch agy once so it refreshes its token, then re-run",
+          remedy: "re-login inside agy",
         },
         fetchedAt,
       );

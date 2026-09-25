@@ -1,7 +1,7 @@
 // cli.test.ts – exit codes, flag validation, rendering, orchestration via the
 // main(argv, { providers, dirs }) seam. No network, no real user files.
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -67,6 +67,36 @@ function failingModule(id: ProviderResult["id"]): ProviderModule {
       error: { kind: "no-credentials", message: "run agy once to log in", hint: "run agy /usage" },
     }),
   };
+}
+
+function refreshableModule(
+  id: ProviderResult["id"],
+  result: { ok: boolean; message: string },
+  calls?: { n: number },
+): ProviderModule {
+  return {
+    id,
+    ttlMs: 300_000,
+    probe: async () => ({ id, ok: true, stale: false, fetchedAt: new Date().toISOString() }),
+    refresh: async () => {
+      if (calls) calls.n += 1;
+      return result;
+    },
+  };
+}
+
+function seedCacheEntry(dir: string, id: ProviderResult["id"]): void {
+  writeFileSync(
+    join(dir, "cache.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      [id]: {
+        data: { id, ok: true, stale: false, fetchedAt: new Date().toISOString() },
+        fetchedAt: Date.now(),
+        ttlMs: 300_000,
+      },
+    }),
+  );
 }
 
 describe("usage errors (exit 2)", () => {
@@ -295,6 +325,105 @@ describe("--fresh and the claude 300s floor", () => {
       assert.equal(claudeCounter.n, 0, "claude keeps its floor: fresh cache still served");
       assert.equal(glmCounter.n, 1, "other providers bypass the TTL once");
       assert.ok(cap.err.some((l) => l.includes("claude keeps its 300s floor")));
+    } finally {
+      cap.restore();
+    }
+  });
+});
+
+describe("auth refresh", () => {
+  it("missing --provider lists capabilities plus usage on stderr and exits 2", async () => {
+    const cap = captureConsole();
+    try {
+      const code = await main(["auth", "refresh"], {
+        providers: [refreshableModule("alibaba", { ok: true, message: "x" }), okModule("glm")],
+        dirs: { subtrk: tempSubtrkDir() },
+      });
+      assert.equal(code, 2);
+      const text = cap.err.join("\n");
+      assert.match(text, /alibaba – interactive refresh supported/);
+      assert.match(text, /glm – no interactive refresh/);
+      assert.match(text, /usage: subtrk auth refresh --provider <id>/);
+      assert.equal(cap.out.length, 0);
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("unknown provider exits 2 with one stderr line", async () => {
+    const cap = captureConsole();
+    try {
+      const code = await main(["auth", "refresh", "--provider", "nope"], {
+        providers: [refreshableModule("alibaba", { ok: true, message: "x" })],
+        dirs: { subtrk: tempSubtrkDir() },
+      });
+      assert.equal(code, 2);
+      assert.match(cap.err[0], /unknown provider 'nope'/);
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("extra positional after the verb exits 2", async () => {
+    const cap = captureConsole();
+    try {
+      const code = await main(["auth", "refresh", "extra"], {
+        providers: [refreshableModule("alibaba", { ok: true, message: "x" })],
+        dirs: { subtrk: tempSubtrkDir() },
+      });
+      assert.equal(code, 2);
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("stub module refresh ok: exit 0, message printed, cache entry removed", async () => {
+    const dir = tempSubtrkDir();
+    seedCacheEntry(dir, "alibaba");
+    const calls = { n: 0 };
+    const cap = captureConsole();
+    try {
+      const code = await main(["auth", "refresh", "--provider", "alibaba"], {
+        providers: [refreshableModule("alibaba", { ok: true, message: "console session re-authorised" }, calls)],
+        dirs: { subtrk: dir },
+      });
+      assert.equal(code, 0);
+      assert.equal(calls.n, 1);
+      assert.equal(cap.out[0], "alibaba – console session re-authorised");
+      const cache = JSON.parse(readFileSync(join(dir, "cache.json"), "utf8"));
+      assert.ok(!("alibaba" in cache), "successful refresh must drop the cache entry");
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("stub module refresh fail: exit 1, message printed, cache entry kept", async () => {
+    const dir = tempSubtrkDir();
+    seedCacheEntry(dir, "alibaba");
+    const cap = captureConsole();
+    try {
+      const code = await main(["auth", "refresh", "--provider", "alibaba"], {
+        providers: [refreshableModule("alibaba", { ok: false, message: "console login failed – run subtrk init" })],
+        dirs: { subtrk: dir },
+      });
+      assert.equal(code, 1);
+      assert.equal(cap.out[0], "alibaba – console login failed – run subtrk init");
+      const cache = JSON.parse(readFileSync(join(dir, "cache.json"), "utf8"));
+      assert.ok("alibaba" in cache, "failed refresh must keep the cache entry");
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("provider without refresh capability: exit 1 and an informational line", async () => {
+    const cap = captureConsole();
+    try {
+      const code = await main(["auth", "refresh", "--provider", "glm"], {
+        providers: [okModule("glm")],
+        dirs: { subtrk: tempSubtrkDir() },
+      });
+      assert.equal(code, 1);
+      assert.match(cap.out[0], /glm – no interactive refresh; /);
     } finally {
       cap.restore();
     }

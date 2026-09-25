@@ -18,6 +18,7 @@ import {
   type ProviderResult,
   parseEnvText,
   registerSecret,
+  removeCachedProvider,
   scrub,
   scrubValue,
 } from "../src/core.ts";
@@ -331,6 +332,64 @@ function spawnSyncDeadPid(): number {
   assert.ok(r.pid, "spawnSync must report a pid");
   return r.pid;
 }
+
+describe("removeCachedProvider", () => {
+  it("removes only the target entry and keeps schemaVersion", (t) => {
+    const dir = tempDir();
+    t.after(cleanup(dir));
+    const cachePath = join(dir, "cache.json");
+    writeFileSync(
+      cachePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        glm: { data: hit("glm"), fetchedAt: Date.now(), ttlMs: 60_000 },
+        claude: { data: hit("claude"), fetchedAt: Date.now(), ttlMs: 300_000 },
+      }),
+    );
+    removeCachedProvider(dir, "glm");
+    const after = JSON.parse(readFileSync(cachePath, "utf8"));
+    assert.deepEqual(Object.keys(after).sort(), ["claude", "schemaVersion"]);
+    assert.equal(after.schemaVersion, 1);
+    assert.equal(after.claude.data.id, "claude");
+  });
+
+  it("absent entry, absent file, and corrupt file are all silent no-ops", (t) => {
+    const dir = tempDir();
+    t.after(cleanup(dir));
+    const cachePath = join(dir, "cache.json");
+    removeCachedProvider(dir, "glm"); // no file at all
+    assert.ok(!existsSync(cachePath));
+    writeFileSync(
+      cachePath,
+      JSON.stringify({ schemaVersion: 1, glm: { data: hit("glm"), fetchedAt: Date.now(), ttlMs: 60_000 } }),
+    );
+    removeCachedProvider(dir, "claude"); // wrong id
+    assert.ok(existsSync(cachePath));
+    const kept = JSON.parse(readFileSync(cachePath, "utf8"));
+    assert.equal(kept.glm.data.id, "glm", "unrelated entry survives");
+    writeFileSync(cachePath, "{corrupt");
+    removeCachedProvider(dir, "glm"); // corrupt file – no throw
+  });
+});
+
+describe("remedy/refreshable scrubbing", () => {
+  it("remedy and refreshable pass through scrubValue untouched – they are not secrets", () => {
+    clearSecrets();
+    registerSecret("sek-fixture-123");
+    const out = scrubValue({
+      refreshable: true,
+      error: {
+        kind: "no-credentials",
+        message: "token sek-fixture-123 expired",
+        remedy: "subtrk auth refresh --provider alibaba",
+      },
+    });
+    assert.equal(out.refreshable, true);
+    assert.equal(out.error.remedy, "subtrk auth refresh --provider alibaba");
+    assert.equal(out.error.message, "token *** expired", "real secrets in messages still scrub");
+    clearSecrets();
+  });
+});
 
 describe("scheduling math", () => {
   const now = 1_789_500_000_000;

@@ -19,6 +19,7 @@ shared cache so concurrent agents never hammer provider endpoints.
 | `subtrk status --fresh` | Bypass cache TTLs once (Claude's 300s floor still applies – warns) |
 | `subtrk status --strict` | Exit 3 if any provider failed |
 | `subtrk init` | One-time interactive setup (the only interactive command) |
+| `subtrk auth refresh` | Re-run one provider's interactive credential refresh (`--provider <id>`, see §`subtrk auth refresh`) |
 | `subtrk serve` | Local web console on 127.0.0.1 (see §`subtrk serve`) |
 
 Every subcommand supports `--help`; unknown flags exit 2 (fail loud).
@@ -87,6 +88,7 @@ interface ProviderError {
   kind: ErrorKind;
   message: string;        // one line, redacted
   hint?: string;          // next step, e.g. "run subtrk init"
+  remedy?: string;        // exact CLI line an agent/operator can run (fixed literal, no prose)
   retryAfterMs?: number;  // rate-limited only
   status?: number;        // http-error only
 }
@@ -116,11 +118,16 @@ interface ProviderResult {
   windows?: Window[];           // on error-fallback these are the cached values
   credits?: Credits;            // ditto
   note?: string;                // e.g. opencode's constant PAYG note
+  refreshable?: true;           // module supports interactive refresh (additive, schemaVersion stays 1)
   error?: ProviderError;        // present iff ok === false
 }
 ```
 
-Agent rule: **branch on `error.kind`, never on `message` text.**
+Agent rule: **branch on `error.kind`, never on `message` text.** When an error
+carries `remedy`, that line is the fix – run it as-is. When a failed provider
+carries `refreshable: true`, an agent can re-authorise it without a human
+editor: `subtrk auth refresh --provider <id>` (or `POST /api/refresh` on a
+running console).
 
 ### Exit codes
 
@@ -207,6 +214,9 @@ interface ProviderModule {
   id: ProviderId;
   ttlMs: number;
   probe(): Promise<ProviderResult>; // NEVER throws – errors become ProviderResult.error
+  refresh?(): Promise<{ ok: boolean; message: string }>; // interactive re-auth;
+  // runs the provider's own login flow, resolves with a fixed-literal message –
+  // subprocess stdout/stderr are never captured into the result
 }
 ```
 
@@ -278,8 +288,11 @@ has no usage surface of its own.
   Then `bl auth login --console --console-site international` (browser). The
   console leg is **not** one-time: sessions are short-lived server-side (measured
   at roughly five hours; bl stores a bare access token with no refresh material)
-  and bl has no auto-refresh – when subtrk reports `no-credentials` for alibaba,
-  re-run only the console step.
+  and bl has no auto-refresh – when subtrk reports `no-credentials` for alibaba
+  (that error carries `remedy: subtrk auth refresh --provider alibaba`),
+  re-run only the console step: `subtrk auth refresh --provider alibaba` (the
+  fixed-literal `bl auth login --console --console-site international`, 300s
+  budget) or the same step inside `subtrk init`.
 
 ### google – Google AI Pro (via agy, Antigravity CLI)
 
@@ -343,7 +356,9 @@ inference). Absent everywhere → `no-credentials`, hint `run subtrk init or ope
 Checks, in order, printing a checklist with pass/fail per provider:
 1. Claude: `~/.claude/.credentials.json` readable + unexpired → else instruct `claude /login`.
 2. GLM: ZCode config key present → else instruct ZCode login.
-3. Alibaba (bl 2.0.1 flow): install offer if missing → hidden prompt for the Token
+3. Alibaba (bl 2.0.1 flow): install offer if missing → when bl's own config
+   (`~/.bailian/config.json`) already stores `token-plan.api_key`, that key is
+   reused and the prompt is skipped; otherwise a hidden prompt for the Token
    Plan API key (`sk-sp-…`, passed as a single argv element via execFile) →
    `bl auth login --api-key <key>` → console-site question (default international)
    → `bl auth login --console [--console-site international]` interactively
@@ -364,6 +379,32 @@ Checks, in order, printing a checklist with pass/fail per provider:
 `subtrk init` never sends a secret anywhere except the owning provider's endpoint, and
 never writes secrets anywhere except `~/.subtrk/env` and vendor-owned files.
 
+## `subtrk auth refresh` – interactive re-auth for one provider
+
+Providers whose module has `refresh` (today: claude, alibaba) can be
+re-authorised without re-running `subtrk init`. `subtrk init` remains the only
+other interactive command; this one re-runs the provider's own login flow:
+
+- claude: a probe – the OAuth self-refresh path already rotates the token pair
+  and writes it back.
+- alibaba: the fixed-literal console re-login `bl auth login --console
+  --console-site international` (Windows `.cmd` shim through the shell; 300s
+  budget – bl blocks on the browser callback and has its own idle timeout).
+
+Contract:
+
+- `subtrk auth refresh --provider <id>` exits 0 on success; the provider's
+  cache entry is dropped so the next `subtrk status` re-probes.
+- Exit 1 when the refresh reports failure (fixed-literal message on stdout) or
+  the provider has no interactive refresh – the line names the error's
+  `remedy`, or `re-run subtrk init`.
+- Exit 2 on usage errors: a missing `--provider` prints every provider id with
+  whether interactive refresh is supported plus the usage line (stderr); an
+  unknown id prints `unknown provider '<id>'`.
+
+Subprocess output is never captured or printed – the result message is always
+a fixed literal, and a printed line can never contain a token.
+
 ## AXI conformance summary
 
 Token-efficient default output (compact lines; TOON serializer deferred – payload is
@@ -373,7 +414,8 @@ percent) · definitive empty states (every enabled provider always emits a state
 errors + exit codes, agent commands never prompt · content-first (bare `subtrk` = status)
 · contextual `help:` line · consistent `--help` · secrets redacted by default ·
 `--confirm` gating reserved for any future state-changing operation (e.g. grant
-redemption, if ever un-parked).
+redemption, if ever un-parked) · interactive re-auth (`subtrk auth refresh` /
+`POST /api/refresh`) is the one deliberate state-changing exception – D9.
 
 ## `subtrk serve` – local web console
 
@@ -393,15 +435,29 @@ One page for every enabled provider, served from the same cache the CLI reads.
 - `GET /api/status` → the identical scrubbed StatusOutput JSON that
   `subtrk status --json` prints, refreshed through the same cache (TTLs
   honored). The Bearer compare is timing-safe; missing/wrong token → 401.
+- `POST /api/refresh?provider=<id>` → re-authorises one provider, behind the
+  same Bearer token as `/api/status` (401 on failure). The id must belong to a
+  refresh-capable provider (400 `unknown or non-refreshable provider`
+  otherwise). Single-flight per provider: while one refresh for an id is in
+  flight, another request for the same id gets 409 `refresh already running`;
+  other providers are unaffected. A completed refresh always answers 200 –
+  the body carries `{"ok": boolean, "message": string}` and `ok:false` means
+  the action ran and reported failure (the endpoint itself worked; the HTTP
+  status never encodes the action's outcome). `message` is a fixed literal –
+  subprocess output is never forwarded to the client. On success the
+  provider's cache entry is dropped so the next `/api/status` re-probes.
+  Non-POST → 405 with `allow: POST`. No request body – the provider id comes
+  from the query string only.
 - Hardening: the Host header must be `127.0.0.1[:port]` or
   `localhost[:port]` (403 otherwise – DNS-rebinding defense); no CORS headers
   are ever emitted, so cross-site pages can neither read responses nor pass
-  the preflight a custom header requires; GET-only (405 otherwise); handlers
-  never throw. Ctrl-C shuts down cleanly.
+  the preflight a custom header requires; `/` and `/api/status` stay
+  GET-only (405 otherwise); handlers never throw. Ctrl-C shuts down cleanly.
 - The dashboard: per-provider cards (usage bars per window with ≥80%/≥95%
-  warning levels, credits, staleness, error kinds with hints), a 7-day reset
-  timeline, an upcoming-resets table, an agent-view terminal panel, and
-  auto-refresh at `recheckAfter`.
+  warning levels, credits, staleness, error kinds with hints and remedies –
+  providers marked `refreshable` get a Refresh now button that calls
+  `POST /api/refresh`), a 7-day reset timeline, an upcoming-resets table, an
+  agent-view terminal panel, and auto-refresh at `recheckAfter`.
 
 ## Not in v0 (parked)
 

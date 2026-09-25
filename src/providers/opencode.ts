@@ -63,6 +63,7 @@ async function probeInner(): Promise<ProviderResult> {
         kind: "no-credentials",
         message: "no OPENCODE_API_KEY and no opencode.key in ~/.local/share/opencode/auth.json",
         hint: "run subtrk init or opencode auth login",
+        remedy: "subtrk init",
       },
     };
   }

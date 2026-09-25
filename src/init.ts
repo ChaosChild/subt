@@ -199,6 +199,15 @@ export function classifyBlVerify(
   return { ok: false, message: scrubFn(last).slice(-200) };
 }
 
+// Pure: bl's own config (~/.bailian/config.json) carries a non-empty Token Plan
+// API key? init skips its secret prompt when it does – the stored key is reused.
+export function blHasPlanKey(configObj: unknown): boolean {
+  const tp = (configObj as { "token-plan"?: unknown } | null)?.["token-plan"];
+  if (typeof tp !== "object" || tp === null) return false;
+  const key = (tp as { api_key?: unknown }).api_key;
+  return typeof key === "string" && key !== "";
+}
+
 async function askConsoleSite(): Promise<"international" | "domestic"> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
@@ -299,21 +308,27 @@ export async function runInit(opts: InitOpts = {}): Promise<void> {
     bl = findOnPath("bl");
   }
   if (bl) {
-    const key = await askHidden(
-      "alibaba – Store your Token Plan API key now? (sk-sp-... from the subscription overview page; hidden, empty to skip): ",
-    );
-    if (key && safeArg(key)) {
-      registerSecret(key);
-      const r = await runBl(["auth", "login", "--api-key", key]);
-      console.log(
-        r.code === 0
-          ? "[ok]      alibaba – API key login succeeded"
-          : "[failed]  alibaba – API key login failed (bl exited non-zero)",
+    // bl stores the plan key from any past `bl auth login --api-key` – when it is
+    // already there, skip the secret prompt entirely and reuse it.
+    if (blHasPlanKey(readJson(join(homedir(), ".bailian", "config.json")))) {
+      console.log("[ok]      alibaba – Token Plan API key already stored in bl config – reusing it");
+    } else {
+      const key = await askHidden(
+        "alibaba – Store your Token Plan API key now? (sk-sp-... from the subscription overview page; hidden, empty to skip): ",
       );
-    } else if (key) {
-      console.log(
-        "[failed]  alibaba – API key login skipped: key contains characters outside the expected sk-sp key set",
-      );
+      if (key && safeArg(key)) {
+        registerSecret(key);
+        const r = await runBl(["auth", "login", "--api-key", key]);
+        console.log(
+          r.code === 0
+            ? "[ok]      alibaba – API key login succeeded"
+            : "[failed]  alibaba – API key login failed (bl exited non-zero)",
+        );
+      } else if (key) {
+        console.log(
+          "[failed]  alibaba – API key login skipped: key contains characters outside the expected sk-sp key set",
+        );
+      }
     }
     const site = await askConsoleSite();
     const consoleArgs =

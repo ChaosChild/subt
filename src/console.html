@@ -137,6 +137,11 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; display: grid; gap: 20px; }
 .err .k { font: 600 12px var(--mono); color: var(--warn); }
 .err .h { color: var(--text-2); margin-top: 2px; }
 .err .h code { font-family: var(--mono); font-size: 12px; }
+.rrow { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.btn-refresh { border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); background: var(--surface); color: var(--text); font: 600 12px var(--font); padding: 3px 10px; border-radius: 7px; cursor: pointer; }
+.btn-refresh:hover:not(:disabled) { border-color: var(--warn); }
+.btn-refresh:disabled { color: var(--text-3); cursor: default; }
+.rnote { color: var(--text-2); font-size: 12px; }
 .pfoot { margin-top: auto; padding-top: 10px; border-top: 1px dashed var(--border); display: flex; gap: 12px; font-size: 11.5px; color: var(--text-3); }
 .pfoot span b { color: var(--text-2); font-weight: 500; font-family: var(--mono); }
 
@@ -242,15 +247,15 @@ footer code { font-family: var(--mono); color: var(--text-2); }
       <span><i style="background:var(--crit)"></i>≥95%</span>
       <span>[stale] = cached past TTL or served after an error</span>
     </div>
-    <div>Served by <code>subtrk serve</code> from <code>~/.subtrk/cache.json</code> · JSON at <code>/api/status</code> · read-only · secrets redacted</div>
+    <div>Served by <code>subtrk serve</code> from <code>~/.subtrk/cache.json</code> · JSON at <code>/api/status</code> · secrets redacted</div>
   </div>
 </footer>
 
 <script>
 // subtrk serve console – live page.
 // The bearer token arrives in the URL fragment (#<token> or #token=<token>) and is
-// used only as the Authorization header on /api/status requests: never stored,
-// never logged, never rendered, never placed in a query string.
+// used only as the Authorization header on /api/status and /api/refresh requests:
+// never stored, never logged, never rendered, never placed in a query string.
 
 const META = {
   claude:     { name: "Anthropic", color: "#c96442", ttl: 300 },
@@ -348,7 +353,11 @@ function providerHTML(p) {
       body += windowHTML(w);
     }
   }
-  if (p.error) body += `<div class="err"><span class="k">${esc(p.error.kind)}</span> – ${esc(p.error.message)}${p.error.hint ? `<div class="h">${esc(p.error.hint)}</div>` : ""}</div>`;
+  if (p.error) {
+    const remedy = p.error.remedy ? `<div class="h"><code>${esc(p.error.remedy)}</code></div>` : "";
+    const ctl = p.refreshable ? `<div class="rrow"><button type="button" class="btn-refresh" data-refresh="${esc(p.id)}">Refresh now</button><span class="rnote"></span></div>` : "";
+    body += `<div class="err"><span class="k">${esc(p.error.kind)}</span> – ${esc(p.error.message)}${p.error.hint ? `<div class="h">${esc(p.error.hint)}</div>` : ""}${remedy}${ctl}</div>`;
+  }
   if (p.note) body += `<div class="note">${esc(p.note)}</div>`;
   return `<article class="card prov ${worst >= 95 ? "crit" : ""}">
     <div class="phead"><div class="pmark" style="background:${m.color}">${esc(String(p.id).slice(0, 2).toUpperCase())}</div>
@@ -498,6 +507,41 @@ async function refresh() {
 $("host").textContent = HOST;
 refresh();
 setInterval(tick, 1000);
+
+// "Refresh now" – re-runs the provider's own interactive login via /api/refresh
+// (same per-run Bearer token as /api/status). Note text goes through
+// textContent; dynamic strings in HTML all pass esc() at render time.
+document.addEventListener("click", async (e) => {
+  const btn = e.target instanceof Element ? e.target.closest("button[data-refresh]") : null;
+  if (!(btn instanceof HTMLButtonElement) || btn.disabled) return;
+  const id = btn.dataset.refresh ?? "";
+  const note = btn.closest(".err")?.querySelector(".rnote");
+  const say = t => { if (note) note.textContent = t; };
+  const failNote = t => { say(t); btn.disabled = false; };
+  btn.disabled = true;
+  say("opening login…");
+  try {
+    const res = await fetch(`/api/refresh?provider=${encodeURIComponent(id)}`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.status === 401) {
+      showBanner("crit", "token rejected – restart subtrk serve and open the fresh URL");
+      failNote("");
+      return;
+    }
+    if (res.status === 409) { failNote("refresh already running"); return; }
+    const out = await res.json().catch(() => null);
+    if (res.ok && out && out.ok === true) {
+      say("re-authorised – reloading");
+      refresh(); // existing status refetch – re-renders the cards
+      return;
+    }
+    failNote(out && typeof out.message === "string" ? out.message : "refresh failed");
+  } catch {
+    failNote("cannot reach subtrk serve – is it still running?");
+  }
+});
 
 // A fresh URL (new fragment token) opened in this tab heals the page without a manual reload.
 addEventListener("hashchange", () => {

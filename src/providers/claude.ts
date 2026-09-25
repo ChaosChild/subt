@@ -335,17 +335,29 @@ async function probeInner(): Promise<ProviderResult> {
   return { id: "claude", ok: true, stale: false, fetchedAt, windows: parsed.windows };
 }
 
+// probe = credential load + (expired -> self-refresh + write-back) + usage read.
+// refresh reuses it: the self-refresh path already rotates the OAuth pair and
+// persists it, so "refresh" is simply "probe now".
+function probe(): Promise<ProviderResult> {
+  return probeInner().catch(
+    (e: unknown): ProviderResult =>
+      fail(
+        { kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` },
+        new Date().toISOString(),
+      ),
+  );
+}
+
 const provider: ProviderModule = {
   id: "claude",
   ttlMs: 300_000,
-  probe(): Promise<ProviderResult> {
-    return probeInner().catch(
-      (e: unknown): ProviderResult =>
-        fail(
-          { kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` },
-          new Date().toISOString(),
-        ),
-    );
+  probe,
+  refresh: async () => {
+    const r = await probe();
+    return {
+      ok: r.ok,
+      message: r.ok ? "claude token refreshed" : (r.error?.message ?? "claude refresh failed"),
+    };
   },
 };
 export default provider;
