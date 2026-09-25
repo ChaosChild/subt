@@ -22,7 +22,6 @@ import {
   needsRefresh,
   parseAgyKeyringBlob,
   parseAntigravityTokenFile,
-  parseCliproxyAuthFile,
   parseGeminiCreds,
   parseGoogleSummary,
   parseMintResponse,
@@ -352,54 +351,21 @@ test("google googleExpired honours the 60s skew and unknown expiry", () => {
   assert.equal(googleExpired({ accessToken: "t", lineage: "gemini" }, now), false);
 });
 
-test("google parseCliproxyAuthFile extracts the CLIProxyAPI auth file fields (raw kept for nothing)", () => {
-  const parsed = parseCliproxyAuthFile(fixture("antigravity-user@example.com"));
-  assert.deepEqual(parsed, {
-    accessToken: "ya29.example-access-token",
-    refreshToken: "1//example-refresh-token",
-    expiresAtMs: Date.parse("2026-09-25T12:00:00.000Z"),
-    lineage: "cliproxy",
-  });
-  assert.equal("raw" in (parsed ?? {}), false, "no write-back target – the raw JSON is dropped");
-  assert.deepEqual(parseCliproxyAuthFile({ type: "antigravity", refresh_token: "RT" }), {
-    refreshToken: "RT",
-    lineage: "cliproxy",
-  });
-  assert.deepEqual(parseCliproxyAuthFile({ type: "antigravity", refresh_token: "RT", expired: "not-a-date" }), {
-    refreshToken: "RT",
-    lineage: "cliproxy",
-  });
-});
-
-test("google parseCliproxyAuthFile rejects other types, missing refresh tokens and junk", () => {
-  assert.equal(parseCliproxyAuthFile({ type: "gemini", refresh_token: "RT" }), null);
-  assert.equal(parseCliproxyAuthFile({ type: "antigravity" }), null);
-  assert.equal(parseCliproxyAuthFile({ type: "antigravity", refresh_token: "" }), null);
-  assert.equal(parseCliproxyAuthFile({ type: "antigravity", refresh_token: 5 }), null);
-  assert.equal(
-    parseCliproxyAuthFile({ type: "antigravity", refresh_token: "RT", access_token: "" })?.refreshToken,
-    "RT",
-    "empty access_token is simply absent, the file still parses",
-  );
-  assert.equal(parseCliproxyAuthFile({}), null);
-  assert.equal(parseCliproxyAuthFile("nope"), null);
-});
-
 test("google needsRefresh: absent token, past expiry and the 5-minute window all mint; fresh does not", () => {
   const now = 1_800_000_000_000;
-  assert.equal(needsRefresh({ lineage: "cliproxy", refreshToken: "RT" }, now), true, "no access token -> mint");
+  assert.equal(needsRefresh({ lineage: "agy-keyring", refreshToken: "RT" }, now), true, "no access token -> mint");
   assert.equal(
-    needsRefresh({ lineage: "cliproxy", refreshToken: "RT", accessToken: "AT", expiresAtMs: now - 1000 }, now),
+    needsRefresh({ lineage: "agy-keyring", refreshToken: "RT", accessToken: "AT", expiresAtMs: now - 1000 }, now),
     true,
     "expired -> mint",
   );
   assert.equal(
-    needsRefresh({ lineage: "cliproxy", refreshToken: "RT", accessToken: "AT", expiresAtMs: now + 100_000 }, now),
+    needsRefresh({ lineage: "agy-keyring", refreshToken: "RT", accessToken: "AT", expiresAtMs: now + 100_000 }, now),
     true,
     "inside the 5-minute safety window -> mint",
   );
   assert.equal(
-    needsRefresh({ lineage: "cliproxy", refreshToken: "RT", accessToken: "AT", expiresAtMs: now + 400_000 }, now),
+    needsRefresh({ lineage: "agy-keyring", refreshToken: "RT", accessToken: "AT", expiresAtMs: now + 400_000 }, now),
     false,
     "fresh beyond the window -> use the stored token",
   );
@@ -430,7 +396,7 @@ test("google mapGrantFailure: 400/401 and invalid_grant mean re-login, other out
     assert.equal(err.kind, "expired-token");
     assert.equal(err.message, "refresh token rejected by Google");
     assert.equal(err.hint, "the stored login was revoked – re-login once");
-    assert.equal(err.remedy, "re-login inside agy (or CLIProxyAPI)");
+    assert.equal(err.remedy, "re-login inside agy");
   }
   assert.equal(mapGrantFailure(503, "").kind, "http-error");
   assert.equal(mapGrantFailure(undefined, "").kind, "http-error");
