@@ -197,7 +197,15 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     return 2;
   }
   const cmd = positionals[0] ?? "status"; // bare `subtrk` = status, never help
-  const { json, provider = [], fields, fresh, strict, port, help } = parsed.values as {
+  const {
+    json,
+    provider = [],
+    fields,
+    fresh,
+    strict,
+    port,
+    help,
+  } = parsed.values as {
     json?: boolean;
     provider?: string[];
     fields?: string;

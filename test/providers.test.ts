@@ -166,7 +166,7 @@ test("alibaba parseTokenPlanUsage: monthly ratio -> 30d window percent (real wir
   const windows = parseTokenPlanUsage(fixture("token-plan-usage"));
   assert.equal(windows.length, 1);
   assert.equal(windows[0].kind, "30d");
-  assert.ok(Math.abs((windows[0].usedPercent ?? 0) - 10.140047797334222) < 1e-9); // ratio of monthly credits
+  assert.ok(Math.abs((windows[0].usedPercent ?? 0) - 10.14004779733) < 1e-9); // ratio of monthly credits
   assert.equal(windows[0].resetsAt, new Date(1792684800000).toISOString());
 });
 
