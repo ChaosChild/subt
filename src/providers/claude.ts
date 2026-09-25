@@ -94,6 +94,7 @@ interface ClaudeUsageWin {
 }
 
 // Pure: map the usage endpoint body to spec windows; null when the shape is unrecognized.
+// resets_at null or missing marks an inactive window (e.g. no open 5h session) – skip it, never a parse failure.
 export function parseClaudeUsage(body: unknown): { windows: Window[] } | null {
   if (typeof body !== "object" || body === null) return null;
   const b = body as { five_hour?: ClaudeUsageWin; seven_day?: ClaudeUsageWin };
@@ -104,6 +105,7 @@ export function parseClaudeUsage(body: unknown): { windows: Window[] } | null {
   ];
   for (const [kind, w] of pairs) {
     if (w === undefined) continue;
+    if (w.resets_at === null || w.resets_at === undefined) continue; // inactive window
     if (typeof w.utilization !== "number" || typeof w.resets_at !== "string") return null;
     const t = Date.parse(w.resets_at);
     if (!Number.isFinite(t)) return null;
