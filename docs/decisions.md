@@ -25,8 +25,10 @@ bl auth login --console [--console-site international]   # browser login
 ```
 
 `--open-api` (Aliyun AK/SK, least-privilege RAM sub-account) is the fallback if
-the console page rejects the account. Console sessions have no auto-refresh –
-on "Console session is not logged in or has expired", re-run the console step.
+the console page rejects the account. Console sessions have no auto-refresh:
+bl stores a bare access token (no refresh material) and sessions expire
+server-side within hours (measured ~5h) – when that happens, re-run only the
+console step; the stored plan key persists.
 
 Quota reads go through bl's raw passthrough
 (`bl console call --api zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/…`)

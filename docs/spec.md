@@ -273,10 +273,13 @@ has no usage surface of its own.
 - Credits are **derived**: `remaining = total − usedPercent/100 × total`,
   `cycleEndsAt = per1MonthResetTime`, `source: "derived"`. Secondary-call failures
   degrade to fewer fields (windows without credits), never a provider error.
-- One-time auth (see D2): `bl auth login --api-key sk-sp-…` first (prevents
-  the console flow from auto-creating a pay-as-you-go key), then
-  `bl auth login --console --console-site international` (browser). Console
-  sessions expire without auto-refresh – re-run the console step when they do.
+- Auth (see D2): `bl auth login --api-key sk-sp-…` once – it prevents the console
+  flow from auto-creating a pay-as-you-go key, and the stored plan key persists.
+  Then `bl auth login --console --console-site international` (browser). The
+  console leg is **not** one-time: sessions are short-lived server-side (measured
+  at roughly five hours; bl stores a bare access token with no refresh material)
+  and bl has no auto-refresh – when subtrk reports `no-credentials` for alibaba,
+  re-run only the console step.
 
 ### google – Google AI Pro (via agy, Antigravity CLI)
 
