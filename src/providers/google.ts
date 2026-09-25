@@ -1,14 +1,14 @@
-// google — Google AI Pro, best-effort. Credential discovery order:
+// google – Google AI Pro, best-effort. Credential discovery order:
 //   1. Windows Credential Manager generic credential "gemini:antigravity" (agy's OAuth
-//      blob, UTF-8 JSON) — read with a FIXED literal PowerShell P/Invoke script, win32 only.
+//      blob, UTF-8 JSON) – read with a FIXED literal PowerShell P/Invoke script, win32 only.
 //   2. ~/.gemini/oauth_creds.json (legacy gemini: access_token, refresh_token,
-//      expiry_date ms) — expired tokens are refreshed and written back to the same file.
+//      expiry_date ms) – expired tokens are refreshed and written back to the same file.
 //   3. ~/.gemini/antigravity-cli/antigravity-oauth-token (legacy antigravity).
-// The implicit/*.pb files under antigravity-cli are encrypted trajectory data — never read.
+// The implicit/*.pb files under antigravity-cli are encrypted trajectory data – never read.
 // Quota: POST /v1internal:retrieveUserQuotaSummary with an EMPTY {} body (the request
 // proto has no other fields; unknown fields 400). No loadCodeAssist step. agy owns
 // token refresh: on 401 the credential is re-read once (agy refreshes the keyring blob
-// in place while running) and the call retried once — subtrk never refreshes keyring tokens.
+// in place while running) and the call retried once – subtrk never refreshes keyring tokens.
 
 import { execFile } from "node:child_process";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -27,8 +27,8 @@ const QUOTA_PATH = "/v1internal:retrieveUserQuotaSummary";
 
 // The OAuth client constants for legacy file-lineage refresh live in ~/.subtrk/env
 // (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ANTIGRAVITY_CLIENT_ID). They are
-// PUBLIC installed-app values — `subtrk init` fetches them from upstream sources
-// — kept out of this repo so secret scanners stay quiet.
+// PUBLIC installed-app values – `subtrk init` fetches them from upstream sources
+// – kept out of this repo so secret scanners stay quiet.
 async function envClientValue(name: string): Promise<string | undefined> {
   try {
     const core = (await import("../core.ts")) as { getSecret?: (n: string) => string | undefined };
@@ -38,7 +38,7 @@ async function envClientValue(name: string): Promise<string | undefined> {
   }
 }
 
-// FIXED literal — nothing is ever interpolated into it. CredReadW (CharSet Unicode)
+// FIXED literal – nothing is ever interpolated into it. CredReadW (CharSet Unicode)
 // reads the generic credential "gemini:antigravity" (type 1); CredFree releases the
 // buffer; the CredentialBlob bytes are copied verbatim to stdout (UTF-8 JSON).
 const AGY_KEYRING_PS_SCRIPT = `$src = 'using System;using System.Runtime.InteropServices;public static class SubtrkCredRead { [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct CREDENTIAL { public int Flags; public int Type; public string TargetName; public string Comment; public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten; public int CredentialBlobSize; public IntPtr CredentialBlob; public int Persist; public int AttributeCount; public IntPtr Attributes; public string TargetAlias; public string UserName; } [DllImport("advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode)] public static extern bool CredRead(string target, int type, int flags, out IntPtr credPtr); [DllImport("advapi32.dll")] public static extern void CredFree(IntPtr cred); }';
@@ -88,7 +88,7 @@ export function parseGeminiCreds(obj: unknown): GoogleCreds | null {
   return creds;
 }
 
-// Pure: antigravity token file — JSON with access_token if it parses as such, else the
+// Pure: antigravity token file – JSON with access_token if it parses as such, else the
 // bare token string (no refresh, no known expiry).
 export function parseAntigravityTokenFile(text: string): GoogleCreds | null {
   const trimmed = text.trim();
@@ -240,7 +240,7 @@ async function registerSecret(secret: string): Promise<void> {
     const core = (await import("../core.ts")) as { registerSecret?: (s: string) => void };
     if (typeof core.registerSecret === "function") core.registerSecret(secret);
   } catch {
-    // core not present — local-variable discipline applies
+    // core not present – local-variable discipline applies
   }
 }
 
@@ -258,7 +258,7 @@ function readTextIfExists(path: string): string | null {
 }
 
 // Credential Manager read: fixed-literal script, argument-vector spawn (no shell).
-// Any failure — spawn error, non-zero exit, timeout, non-JSON stdout — is simply "no
+// Any failure – spawn error, non-zero exit, timeout, non-JSON stdout – is simply "no
 // keyring credential". Blob text (a secret) never reaches an error message.
 function runKeyringScript(): Promise<string | null> {
   return new Promise((resolve) => {
@@ -310,7 +310,7 @@ async function discoverCreds(): Promise<{ creds: GoogleCreds; path?: string } | 
 }
 
 // Best-effort write-back of the refreshed token to the SAME gemini file (temp+rename);
-// gemini-cli rewrites it too — tolerate races, swallow all errors.
+// gemini-cli rewrites it too – tolerate races, swallow all errors.
 function writeBackCreds(path: string, raw: Record<string, unknown>, accessToken: string, expiresAtMs: number): void {
   try {
     raw.access_token = accessToken;
@@ -353,7 +353,7 @@ async function refreshAccessToken(creds: GoogleCreds): Promise<RefreshOutcome> {
       try {
         code = String((JSON.parse(out.text) as { error?: unknown }).error ?? "");
       } catch {
-        // body not JSON — no error code available
+        // body not JSON – no error code available
       }
     }
     if (code === "invalid_client") {
@@ -407,7 +407,7 @@ async function probeInner(): Promise<ProviderResult> {
   await registerCreds(found.creds);
 
   let token = found.creds.accessToken;
-  // Keyring tokens are refreshed in place by agy — no expiry pre-check and no local
+  // Keyring tokens are refreshed in place by agy – no expiry pre-check and no local
   // refresh; the 401 path below re-reads the blob once. File lineages keep the
   // expiry check + refresh (write-back for the gemini lineage only).
   if (found.creds.lineage !== "agy-keyring" && googleExpired(found.creds, Date.now())) {
@@ -431,7 +431,7 @@ async function probeInner(): Promise<ProviderResult> {
 
   let out = await postJson(`${PRIMARY_HOST}${QUOTA_PATH}`, {}, token);
   if (!out.ok && out.status === 401) {
-    // agy may have refreshed its keyring blob in place — re-read once, retry once.
+    // agy may have refreshed its keyring blob in place – re-read once, retry once.
     const reread = await discoverCreds();
     if (reread) {
       await registerCreds(reread.creds);

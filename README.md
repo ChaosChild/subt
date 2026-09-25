@@ -1,13 +1,17 @@
 # subtrk
 
-**One command for all your AI subscription quotas.** `subtrk` reports remaining usage
-across paid AI plans — Claude Pro, Z.ai GLM Coding Plan, Alibaba Cloud Model Studio,
-Google AI Pro, OpenCode Zen, OpenRouter — as one compact view, designed first for the
-AI agents that work for you and second for you.
+**AI subscription quotas in one command.** `subtrk` reports remaining usage for
+the plans its contributors use – today Claude Pro, Z.ai GLM Coding Plan, Alibaba
+Cloud Model Studio, Google AI Pro, OpenCode Zen and OpenRouter – in one compact
+view, designed first for the AI agents that work for you and second for you.
+Coverage expands as needs or requests come in: adding a provider is a contained
+change (see the [implementation guide](docs/implementation-plan.md)), and PRs
+adding providers are welcome.
 
 Agents stop hitting brick walls at rate limits: `subtrk status --json` gives every
 window's usage and reset time plus a computed `nextEvent`, so an agent can schedule a
-wake-up at the reset instead of dying. Humans stop keeping six vendor tabs open.
+wake-up at the reset instead of dying. Humans stop keeping a browser tab open per
+provider.
 
 ```text
 $ subtrk
@@ -29,15 +33,15 @@ help: subtrk status --json | subtrk status --provider <id> | subtrk init
 subtrk serve
 ```
 
-Starts the dashboard on a random `127.0.0.1` port and prints the URL to open —
-one page for all six providers: usage bars per window (with ≥80%/≥95% warning
+Starts the dashboard on a random `127.0.0.1` port and prints the URL to open –
+one page for every tracked provider: usage bars per window (with ≥80%/≥95% warning
 levels), credit pools, a 7-day reset timeline, upcoming resets, and the same
 agent view the CLI prints, auto-refreshing on the cache heartbeat.
 
 ![Web console](docs/img/console.png)
 
 The server is loopback-only, requires a per-run token (delivered in the printed
-URL), never emits CORS headers, and serves read-only JSON — see
+URL), never emits CORS headers, and serves read-only JSON – see
 [`docs/spec.md`](docs/spec.md) §`subtrk serve` for the security design.
 
 ## Why
@@ -50,18 +54,19 @@ politely, and speaks both human and agent.
 
 ## Design principles
 
-- **Agents first** — follows the [AXI principles](https://axi.md): token-efficient
+- **Agents first** – follows the [AXI principles](https://axi.md): token-efficient
   output, pre-computed aggregates (`nextEvent`, `recheckAfter`), structured errors
   you branch on by kind (never by message text), exit codes with meaning, no
   interactive traps in agent paths, content before help.
-- **Zero dependencies** — TypeScript executed directly by Node ≥22.18 (type
-  stripping). No install beyond `npm link`, no build step, no supply chain.
-- **Polite by construction** — one shared TTL cache (`~/.subtrk/cache.json`) with
+- **Zero runtime dependencies** – TypeScript executed directly by Node ≥22.18
+  (type stripping). No build step; the dev toolchain (typecheck, linter) is
+  dev-only and never ships.
+- **Polite by construction** – one shared TTL cache (`~/.subtrk/cache.json`) with
   stale-while-revalidate and a hard 300s floor on the one endpoint known to punish
   polling. Six agents checking simultaneously produce one upstream request.
-- **Fail soft, per provider** — one broken endpoint never breaks the others; errors
+- **Fail soft, per provider** – one broken endpoint never breaks the others; errors
   carry a `kind` and a `hint`, and stale cached numbers beat a wall of text.
-- **Secrets stay put** — reads the credential files your CLIs already maintain
+- **Secrets stay put** – reads the credential files your CLIs already maintain
   (read-only), stores its own keys in `~/.subtrk/env` (never global env vars), and
   mechanically redacts every secret from every output. The cache contains no secrets.
 
@@ -70,15 +75,22 @@ politely, and speaks both human and agent.
 Requires Node ≥22.18.
 
 ```bash
+npm install -g subtrk
+subtrk init       # one-time interactive setup
+```
+
+From source (development):
+
+```bash
 git clone https://github.com/ChaosChild/subtrk.git
 cd subtrk
-npm link        # puts `subtrk` on PATH (subtrk.cmd on Windows)
-subtrk init       # one-time interactive setup
+npm install       # dev-only toolchain
+npm link          # puts `subtrk` on PATH (subtrk.cmd on Windows)
 ```
 
 `subtrk init` checks every provider's credentials, runs the Alibaba login flow
 (`bl auth login --api-key` + `--console` browser login), prompts for OpenRouter
-keys (hidden input, saved to `~/.subtrk/env`), and verifies each provider honestly —
+keys (hidden input, saved to `~/.subtrk/env`), and verifies each provider honestly –
 `[ok]` only when a credential actually works.
 
 ## Providers
@@ -88,13 +100,16 @@ keys (hidden input, saved to `~/.subtrk/env`), and verifies each provider honest
 | Anthropic | Claude Pro (personal) | `api.anthropic.com/api/oauth/usage` via the OAuth token Claude Code already stores | 5h + 7d | reverse-engineered, de-facto standard |
 | Z.ai | GLM Coding Plan | the same monitor endpoint ZCode itself uses | 5h + weekly | unofficial, officially plugin-endorsed |
 | Alibaba Cloud | Model Studio Token Plan (intl) | official `bl` CLI raw gateway passthrough (`bl console call`) | 30-day credits pool (monthly-only since 2026-09-22) | official (via bl) |
-| Google | AI Pro (personal) | agy's Credential Manager token → Code Assist quota summary (body `{}`, UA `antigravity`) | per-family 5h/weekly (gemini + claude-and-gpt families) | best-effort — degrades to `agy /usage` |
-| OpenCode | Zen pay-as-you-go | no usage/balance API exists for PAYG | — | signals only (honest note) |
-| OpenRouter | pay-as-you-go | `/api/v1/key` (+ `/api/v1/credits` with a management key) | — | official |
+| Google | AI Pro (personal) | agy's Credential Manager token → Code Assist quota summary (body `{}`, UA `antigravity`) | per-family 5h/weekly (gemini + claude-and-gpt families) | best-effort – degrades to `agy /usage` |
+| OpenCode | Zen pay-as-you-go | no usage/balance API exists for PAYG | – | signals only (honest note) |
+| OpenRouter | pay-as-you-go | `/api/v1/key` (+ `/api/v1/credits` with a management key) | – | official |
 
 None of these vendors officially supports third-party quota readers except Alibaba
 and OpenRouter; the others are the same calls their own CLIs make, and can change.
-`subtrk` isolates that churn in six small provider modules and degrades cleanly.
+`subtrk` isolates that churn in small per-provider modules and degrades cleanly.
+These are the providers the contributors use today – the set grows as needs or
+requests come in, and additions are welcome as PRs (the
+[implementation guide](docs/implementation-plan.md) walks through it).
 
 ## For agents
 
@@ -102,25 +117,25 @@ and OpenRouter; the others are the same calls their own CLIs make, and can chang
 subtrk status --json
 ```
 
-- `providers[].windows[].resetsAt` — ISO-8601 UTC reset instants.
-- `nextEvent.at` — the earliest time new information can exist
+- `providers[].windows[].resetsAt` – ISO-8601 UTC reset instants.
+- `nextEvent.at` – the earliest time new information can exist
   (`max(resetsAt, fetchedAt + ttl)`); schedule the wake-up there.
-- `recheckAfter` — heartbeat when no `nextEvent` applies.
-- `providers[].error.kind` — branch on it: `no-credentials`, `expired-token`,
+- `recheckAfter` – heartbeat when no `nextEvent` applies.
+- `providers[].error.kind` – branch on it: `no-credentials`, `expired-token`,
   `tool-missing`, `rate-limited`, `forbidden`, `not-readable-remotely`,
   `parse-failure`, `subprocess-failed`, `timeout`, `http-error`.
 - Exit codes: `0` ran (per-provider errors are in the output) · `1` CLI/runtime
   failure · `2` usage error · `3` `--strict` violation.
-- On Windows, spawn `subtrk.cmd` (or use `shell: true`) — there is no bare `.exe`.
+- On Windows, spawn `subtrk.cmd` (or use `shell: true`) – there is no bare `.exe`.
 
 A ZCode/Claude Code-style harness can check before a large task and, at ≥95% of a
 window, schedule a wake-up at `nextEvent.at` and continue on another provider in the
-meantime — no intervention needed.
+meantime – no intervention needed.
 
 ## Configuration
 
-- `~/.subtrk/config.json` — `{ "enabled": ["claude", "glm", ...] }` (absent = all).
-- `~/.subtrk/env` — `OPENROUTER_API_KEY`, `OPENROUTER_MANAGEMENT_KEY`, optional
+- `~/.subtrk/config.json` – `{ "enabled": ["claude", "glm", ...] }` (absent = all).
+- `~/.subtrk/env` – `OPENROUTER_API_KEY`, `OPENROUTER_MANAGEMENT_KEY`, optional
   `OPENCODE_API_KEY` (dotenv format; process env wins). Written by `subtrk init`.
 - Everything else is read from the credential files your CLIs already own:
   `~/.claude/.credentials.json`, `~/.zcode/cli/config.json`, `~/.gemini/*`,
@@ -131,18 +146,19 @@ meantime — no intervention needed.
 - `subtrk` is read-only towards vendors (no state-changing calls exist in the codebase).
 - Secrets are mechanically redacted from all output; the cache stores normalized
   quota data only. See `docs/spec.md` §Redaction.
-- `~/.subtrk/env` holds plaintext keys inside your user profile — the same trust
+- `~/.subtrk/env` holds plaintext keys inside your user profile – the same trust
   envelope as the vendor credential files it reads. Design decisions and known
   trade-offs are tracked in `docs/decisions.md`.
 
 ## Documentation
 
-- [`docs/spec.md`](docs/spec.md) — full CLI specification (output contract, cache,
+- [`docs/spec.md`](docs/spec.md) – full CLI specification (output contract, cache,
   provider integrations, `subtrk init`).
-- [`docs/decisions.md`](docs/decisions.md) — design decisions D1–D8 with rationale.
-- [`docs/implementation-plan.md`](docs/implementation-plan.md) — implementation
+- [`docs/decisions.md`](docs/decisions.md) – design decisions D1–D8 with rationale.
+- [`docs/implementation-plan.md`](docs/implementation-plan.md) – implementation
   guide: layout, coding rules, how to add a provider.
-- [`docs/phases.md`](docs/phases.md) — roadmap (M2 web console, M3 analytics, parked).
+- [`docs/phases.md`](docs/phases.md) – roadmap (web console done; M3 analytics
+  next; parked).
 
 ## License
 

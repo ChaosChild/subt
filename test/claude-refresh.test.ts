@@ -1,4 +1,4 @@
-// claude-refresh.test.ts — pure helpers around the claude OAuth self-refresh
+// claude-refresh.test.ts – pure helpers around the claude OAuth self-refresh
 // (buildRefreshBody, claudeAuth's expired-but-refreshable tri-state) and init's
 // alibaba verification verdict. No network, no subprocesses, no user files.
 import assert from "node:assert/strict";

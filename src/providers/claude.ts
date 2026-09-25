@@ -1,4 +1,4 @@
-// claude — Claude Pro personal subscription via the OAuth usage endpoint.
+// claude – Claude Pro personal subscription via the OAuth usage endpoint.
 // Credential: ~/.claude/.credentials.json. Claude Code only refreshes the token
 // while it runs, so when the access token is expired but the refresh token is
 // still live, subtrk refreshes it against Claude Code's public OAuth client and
@@ -26,7 +26,7 @@ export interface ClaudeAuthFail {
   ok: false;
   error: ProviderError;
   // Present iff error.kind is "expired-token" but the refresh token can still
-  // mint a new access token — the caller may self-refresh.
+  // mint a new access token – the caller may self-refresh.
   refreshToken?: string;
 }
 export type ClaudeAuth = ClaudeAuthOk | ClaudeAuthFail;
@@ -179,7 +179,7 @@ async function registerSecret(secret: string): Promise<void> {
     const core = (await import("../core.ts")) as { registerSecret?: (s: string) => void };
     if (typeof core.registerSecret === "function") core.registerSecret(secret);
   } catch {
-    // core not present — local-variable discipline applies
+    // core not present – local-variable discipline applies
   }
 }
 
@@ -193,7 +193,7 @@ interface Refreshed {
   expiresAtMs: number;
 }
 
-// Exchange the refresh token for a rotated pair. Null on any failure — the
+// Exchange the refresh token for a rotated pair. Null on any failure – the
 // caller falls back to the plain expired-token error.
 async function refreshOAuthToken(refreshToken: string): Promise<Refreshed | null> {
   const out = await fetchText(REFRESH_URL, {
@@ -224,7 +224,7 @@ async function refreshOAuthToken(refreshToken: string): Promise<Refreshed | null
 }
 
 // Best-effort atomic merge into the SAME credentials file: temp+rename, ~2
-// attempts, silent give-up — Claude Code rewrites this file too, so races are
+// attempts, silent give-up – Claude Code rewrites this file too, so races are
 // expected. The rotated refresh token MUST be persisted or the file becomes
 // unusable; the caller keeps using the new pair in memory regardless.
 function writeBackCredentials(credPath: string, fileObj: object, fresh: Refreshed): void {
@@ -252,7 +252,7 @@ function writeBackCredentials(credPath: string, fileObj: object, fresh: Refreshe
       }
     }
   } catch {
-    /* silent — a lost write-back costs one re-refresh next run */
+    /* silent – a lost write-back costs one re-refresh next run */
   }
 }
 

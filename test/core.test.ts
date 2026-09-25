@@ -1,4 +1,4 @@
-// core.test.ts — cache TTL/lock/stale math, env parser precedence, redaction,
+// core.test.ts – cache TTL/lock/stale math, env parser precedence, redaction,
 // nextEvent/recheckAfter math. No network; all paths injected into temp dirs.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

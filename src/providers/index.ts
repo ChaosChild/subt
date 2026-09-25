@@ -1,4 +1,4 @@
-// Provider registry — the single list core iterates under Promise.allSettled.
+// Provider registry – the single list core iterates under Promise.allSettled.
 
 import type { ProviderModule } from "../core.ts";
 import alibaba from "./alibaba.ts";

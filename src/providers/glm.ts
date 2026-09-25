@@ -1,6 +1,6 @@
-// glm — GLM Coding Plan via the ZCode monitor route.
+// glm – GLM Coding Plan via the ZCode monitor route.
 // Credential: ~/.zcode/cli/config.json -> provider.zai.apiKey (fallback env ANTHROPIC_AUTH_TOKEN).
-// Auth header is the RAW key — no Bearer prefix.
+// Auth header is the RAW key – no Bearer prefix.
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -25,7 +25,7 @@ export function glmAuth(configObj: unknown, envToken: string | undefined): { api
         try {
           host = new URL(z.options.baseURL).origin;
         } catch {
-          // unparseable baseURL — keep the default host
+          // unparseable baseURL – keep the default host
         }
       }
     }
@@ -59,10 +59,10 @@ export function parseGlmQuota(body: unknown): { windows: Window[]; plan?: string
     if (typeof l.nextResetTime !== "number" || !Number.isFinite(l.nextResetTime)) return null;
     let kind: string;
     if (l.unit === 3)
-      kind = `${l.number}h`; // hours — the 5h window when number is 5
+      kind = `${l.number}h`; // hours – the 5h window when number is 5
     else if (l.unit === 6)
       kind = l.number === 1 ? "7d" : `${l.number}w`; // weeks
-    else continue; // unknown unit — ignore entry
+    else continue; // unknown unit – ignore entry
     windows.push({ kind, usedPercent: l.percentage, resetsAt: new Date(l.nextResetTime).toISOString() });
   }
   const plan = typeof d.level === "string" || typeof d.level === "number" ? `GLM ${String(d.level)}` : undefined;
@@ -138,7 +138,7 @@ async function getSecret(name: string): Promise<string | undefined> {
       if (s) return s;
     }
   } catch {
-    // core not present — process.env only
+    // core not present – process.env only
   }
   return undefined;
 }
@@ -148,7 +148,7 @@ async function registerSecret(secret: string): Promise<void> {
     const core = (await import("../core.ts")) as { registerSecret?: (s: string) => void };
     if (typeof core.registerSecret === "function") core.registerSecret(secret);
   } catch {
-    // core not present — local-variable discipline applies
+    // core not present – local-variable discipline applies
   }
 }
 
@@ -181,7 +181,7 @@ async function probeInner(): Promise<ProviderResult> {
   void registerSecret(auth.apiKey);
 
   const out = await fetchText(`${auth.host}/api/monitor/usage/quota/limit`, {
-    headers: { Authorization: auth.apiKey }, // raw key — no Bearer prefix
+    headers: { Authorization: auth.apiKey }, // raw key – no Bearer prefix
   });
   if (!out.ok) {
     if (out.status === 401) {

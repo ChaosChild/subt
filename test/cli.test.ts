@@ -1,4 +1,4 @@
-// cli.test.ts — exit codes, flag validation, rendering, orchestration via the
+// cli.test.ts – exit codes, flag validation, rendering, orchestration via the
 // main(argv, { providers, dirs }) seam. No network, no real user files.
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -163,7 +163,7 @@ describe("status with a stubbed registry (exit 0)", () => {
       assert.equal(code, 0);
       const text = cap.out.join("\n");
       assert.match(text, /^claude\s+5h 13% \(reset \d\d:\d\d\)/m);
-      assert.match(text, /^google\s+error: no-credentials — run agy once to log in \(run agy \/usage\)$/m);
+      assert.match(text, /^google\s+error: no-credentials – run agy once to log in \(run agy \/usage\)$/m);
       assert.ok(text.includes("help: subtrk status --json | subtrk status --provider <id> | subtrk init"));
       assert.ok(text.includes("next: claude 5h at"));
     } finally {
@@ -181,7 +181,7 @@ describe("status with a stubbed registry (exit 0)", () => {
       assert.equal(code, 0);
       const text = cap.out.join("\n");
       assert.ok(!/5h 13%/.test(text), "windows filtered out");
-      assert.match(text, /error: no-credentials — run agy once to log in \(run agy \/usage\) — hint: run agy \/usage/);
+      assert.match(text, /error: no-credentials – run agy once to log in \(run agy \/usage\) – hint: run agy \/usage/);
     } finally {
       cap.restore();
     }

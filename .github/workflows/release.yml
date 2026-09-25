@@ -1,7 +1,7 @@
 name: Release
 
 # A tag is the entire release ritual: the CI triple runs, then publish with
-# provenance (trusted publishing / OIDC — no npm token exists), then the
+# provenance (trusted publishing / OIDC – no npm token exists), then the
 # GitHub Release. Configure the trusted publisher on the npm package before
 # the first tagged release (see CONTRIBUTING.md).
 on:

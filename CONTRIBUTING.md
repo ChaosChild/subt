@@ -1,6 +1,6 @@
 # Contributing to subtrk
 
-Thanks for considering a contribution. subtrk is deliberately small — please
+Thanks for considering a contribution. subtrk is deliberately small – please
 keep it that way: zero runtime dependencies, TypeScript that Node runs
 directly, no build step.
 
@@ -18,14 +18,14 @@ npm link           # puts `subtrk` on PATH
 ```bash
 npm run typecheck  # tsc --noEmit (erasable-syntax TS only)
 npm run lint       # biome check .
-npm test           # node:test, fixtures only — tests never touch the network
+npm test           # node:test, fixtures only – tests never touch the network
 ```
 
 All three must pass; CI runs them on ubuntu and windows for every PR.
 
 ## Where things live and the rules they follow
 
-Read [`docs/implementation-plan.md`](docs/implementation-plan.md) first — it
+Read [`docs/implementation-plan.md`](docs/implementation-plan.md) first – it
 covers the layout, the provider-module contract, the secure-coding rules (the
 non-negotiables: fixed-literal subprocess commands, secrets registered for
 redaction, secret-free cache, fail-soft per provider), and a step-by-step
