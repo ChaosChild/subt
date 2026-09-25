@@ -81,25 +81,25 @@ is non-interactive. Accepted trade-off: plaintext values inside the user
 profile – the same trust envelope as the vendor credential files subtrk reads;
 the profile's per-user ACL is the boundary.
 
-## D7 · Google – read the CLIProxyAPI auth file or agy's keyring token, self-refresh read-only
+## D7 · Google – read agy's keyring token (plus legacy files), self-refresh read-only
 
 Consumer Gemini CLI service ended 2026-06-18; consumer accounts authenticate
-through the closed-source `agy` binary or CLIProxyAPI, both holding an
-Antigravity OAuth login. subtrk reads the first credential it finds: the
-cross-platform CLIProxyAPI auth files (`~/.cli-proxy-api/antigravity*.json` –
-filenames may carry the account email, which is never logged), then agy's
-plaintext JSON blob in Windows Credential Manager (target `gemini:antigravity`,
-read zero-dependency via a fixed-literal PowerShell `CredReadW` script spawned
-with `execFile`), then the legacy `~/.gemini/*` files.
+through the closed-source `agy` binary, which holds an Antigravity OAuth login.
+subtrk reads the first credential it finds: agy's plaintext JSON blob in Windows
+Credential Manager (target `gemini:antigravity`, read zero-dependency via a
+fixed-literal PowerShell `CredReadW` script spawned with `execFile`), then the
+legacy `~/.gemini/*` files. No third-party credential store is read or written.
 
-Both primary stores keep a long-lived refresh token, and Google's refresh tokens
+The keyring store keeps a long-lived refresh token, and Google's refresh tokens
 are **non-rotating** (verified live 2026-09-25). subtrk therefore mints access
 tokens itself – `POST oauth2.googleapis.com/token` with the PUBLIC Antigravity
-client constants (CLIProxyAPI ships them in its MIT source; init fetches them
-into `~/.subtrk/env`). The minted token stays a local variable for the quota
-call and **nothing is ever written back to either store** – read-only refresh,
-and `agy` does not need to be running. The legacy gemini lineage keeps its
-write-back refresh; the legacy antigravity file refreshes without write-back.
+client constants (fetched by init into `~/.subtrk/env` from a public reference
+implementation: CLIProxyAPI's MIT source is merely where the values are
+published – constants sourcing only, no CLIProxyAPI install, file or process is
+used). The minted token stays a local variable for the quota call and **nothing
+is ever written back to the keyring** – read-only refresh, and `agy` does not
+need to be running. The legacy gemini lineage keeps its write-back refresh; the
+legacy antigravity file refreshes without write-back.
 
 Quota call: `POST cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`
 with `User-Agent: antigravity` and body `{}` – no `ideType`, no project, no

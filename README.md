@@ -113,7 +113,7 @@ keys (hidden input, saved to `~/.subtrk/env`), and verifies each provider honest
 | Anthropic | Claude Pro (personal) | `api.anthropic.com/api/oauth/usage` via the OAuth token Claude Code already stores | 5h + 7d | reverse-engineered, de-facto standard |
 | Z.ai | GLM Coding Plan | the same monitor endpoint ZCode itself uses | 5h + weekly | unofficial, officially plugin-endorsed |
 | Alibaba Cloud | Model Studio Token Plan (intl) | official `bl` CLI raw gateway passthrough (`bl console call`) | 30-day credits pool (monthly-only since 2026-09-22) | official (via bl) |
-| Google | AI Pro (personal) | CLIProxyAPI auth file (`~/.cli-proxy-api`) or agy's Credential Manager token → Code Assist quota summary (body `{}`, UA `antigravity`); read-only self-refresh | per-family 5h/weekly (gemini + claude-and-gpt families) | best-effort – degrades to `agy /usage` |
+| Google | AI Pro (personal) | agy's Credential Manager token → Code Assist quota summary (body `{}`, UA `antigravity`); read-only self-refresh | per-family 5h/weekly (gemini + claude-and-gpt families) | best-effort – degrades to `agy /usage` |
 | OpenCode | Zen pay-as-you-go | no usage/balance API exists for PAYG | – | signals only (honest note) |
 | OpenRouter | pay-as-you-go | `/api/v1/key` (+ `/api/v1/credits` with a management key) | – | official |
 
@@ -155,7 +155,7 @@ meantime – no intervention needed.
   `OPENCODE_API_KEY` (dotenv format; process env wins). Written by `subtrk init`.
 - Everything else is read from the credential files your CLIs already own:
   `~/.claude/.credentials.json`, `~/.zcode/cli/config.json`, `~/.gemini/*`,
-  `~/.cli-proxy-api/*`, `~/.local/share/opencode/auth.json`, `bl`'s own store.
+  `~/.local/share/opencode/auth.json`, `bl`'s own store.
 
 ## Security notes
 

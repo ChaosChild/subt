@@ -40,7 +40,7 @@ help: subtrk status --json | subtrk status --provider <id> | subtrk init
 ```
 
 - One line per provider, always – including failures:
-  `google     error: no-credentials – no Google/Antigravity credential found (log in once with agy or CLIProxyAPI)`.
+  `google     error: no-credentials – no Google/Antigravity credential found (log in once with agy)`.
   On a bare error line the `hint` is appended in parentheses, so the line is always
   actionable on its own; with other segments present, hints render via `--fields hints`.
 - `!` marks a window ≥95% used; `[stale]` marks cached-past-TTL or error-fallback data.
@@ -294,22 +294,18 @@ has no usage surface of its own.
   fixed-literal `bl auth login --console --console-site international`, 300s
   budget) or the same step inside `subtrk init`.
 
-### google – Google AI Pro (via agy / CLIProxyAPI, Antigravity CLI)
+### google – Google AI Pro (via agy, Antigravity CLI)
 
 Google sunset consumer Gemini CLI service on 2026-06-18; consumer accounts
-authenticate through the closed-source `agy` binary or CLIProxyAPI, both holding
-an Antigravity OAuth login. Credential discovery, first match wins:
+authenticate through the closed-source `agy` binary, which holds an Antigravity
+OAuth login. Credential discovery, first match wins:
 
-1. `~/.cli-proxy-api/antigravity*.json` – CLIProxyAPI auth files (cross-platform,
-   so tried first; filenames may carry the account email, which subtrk never logs
-   or surfaces). Requires `type: "antigravity"` and a non-empty `refresh_token`;
-   expiry comes from the RFC3339 `expired` field.
-2. Windows Credential Manager target `gemini:antigravity` (agy's OAuth blob): a
+1. Windows Credential Manager target `gemini:antigravity` (agy's OAuth blob): a
    fixed-literal PowerShell `CredReadW` P/Invoke snippet (spawned via `execFile`,
    ~5s budget, win32 only) returns a plaintext JSON blob
    `{token:{access_token, refresh_token, expiry}, auth_method, id_token}`.
-3. `~/.gemini/oauth_creds.json` (legacy gemini).
-4. `~/.gemini/antigravity-cli/antigravity-oauth-token` (legacy antigravity).
+2. `~/.gemini/oauth_creds.json` (legacy gemini).
+3. `~/.gemini/antigravity-cli/antigravity-oauth-token` (legacy antigravity).
 
 The `implicit/*.pb` files are encrypted trajectory data – never read.
 
@@ -322,21 +318,23 @@ The `implicit/*.pb` files are encrypted trajectory data – never read.
   resetTime}` → windows. On 403/404, one retry against
   `daily-cloudcode-pa.googleapis.com`, then `not-readable-remotely`, hint
   `run agy /usage`.
-- Self-refresh (lineages 1–2): a missing access token or an expiry inside a
-  5-minute safety window (CLIProxyAPI uses the same window) **mints instead of
-  failing**: `POST https://oauth2.googleapis.com/token`
+- Self-refresh (keyring lineage): a missing access token or an expiry inside a
+  5-minute safety window **mints instead of failing**: `POST
+  https://oauth2.googleapis.com/token`
   `{grant_type:"refresh_token", refresh_token, client_id, client_secret}` with the
   PUBLIC Antigravity client constants (`ANTIGRAVITY_CLIENT_ID`,
   `ANTIGRAVITY_CLIENT_SECRET`) from `~/.subtrk/env`, fetched by `subtrk init` from
-  CLIProxyAPI's MIT source. Google's refresh tokens are **non-rotating** (verified
+  a public reference implementation – CLIProxyAPI's MIT source is merely where the
+  constants are published (constants sourcing only; no CLIProxyAPI install, file
+  or process is used). Google's refresh tokens are **non-rotating** (verified
   2026-09-25): the minted token lives in a local variable for the quota call only
-  and **nothing is ever written back** to the keyring or the auth file – read-only
-  refresh, `agy` does not need to be running. Missing constants → `no-credentials`
+  and **nothing is ever written back** to the keyring – read-only refresh, `agy`
+  does not need to be running. Missing constants → `no-credentials`
   (remedy `subtrk init`); grant answered 400/401/`invalid_grant` → `expired-token`,
-  remedy `re-login inside agy (or CLIProxyAPI)`.
-- On quota 401: re-read the credential once (agy/CLIProxyAPI refresh their stores
-  in place while running) and retry; still 401 → `expired-token`, remedy
-  `re-login inside agy (or CLIProxyAPI)`.
+  remedy `re-login inside agy`.
+- On quota 401: re-read the credential once (agy refreshes its store in place
+  while running) and retry; still 401 → `expired-token`, remedy
+  `re-login inside agy`.
 - Legacy file lineages keep their own refresh when expired (60s skew): gemini
   writes back to the same file using the gemini client constants
   (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`); antigravity refreshes without
@@ -379,15 +377,15 @@ Checks, in order, printing a checklist with pass/fail per provider:
    `bl usage token-plan --output json`; `[ok]` only when verification passes,
    `[failed]` with a scrubbed stderr line otherwise. Key order matters: the API key
    first prevents the console flow from auto-creating an ordinary pay-as-you-go key.
-4. Google: credential found (a `~/.cli-proxy-api/antigravity*.json` CLIProxyAPI
-   auth file, a legacy `~/.gemini` file, or – win32 – the Credential Manager
-   target `gemini:antigravity`, checked via a literal
-   `cmdkey /list:gemini:antigravity` probe) → `[ok]`; else print the login
-   one-liners: agy (`irm https://antigravity.google/cli/install.ps1 | iex`, then
-   launch once) or a CLIProxyAPI login – subtrk reads either store directly. The
-   PUBLIC OAuth client constants are fetched from upstream whenever the
-   Antigravity pair is missing (every lineage self-refreshes with it) or a legacy
-   file credential exists without the gemini pair – all four into `~/.subtrk/env`.
+4. Google: credential found (a legacy `~/.gemini` file, or – win32 – the
+   Credential Manager target `gemini:antigravity`, checked via a literal
+   `cmdkey /list:gemini:antigravity` probe) → `[ok]`; else print the agy login
+   one-liner (`irm https://antigravity.google/cli/install.ps1 | iex`, then launch
+   once). The PUBLIC OAuth client constants are fetched from a public reference
+   implementation (CLIProxyAPI's MIT source – constants sourcing only; no
+   CLIProxyAPI install, file or process is used) whenever the Antigravity pair is
+   missing (the keyring lineage self-refreshes with it) or a legacy file
+   credential exists without the gemini pair – all four into `~/.subtrk/env`.
 5. opencode: `auth.json` or key present → else offer to store one in `~/.subtrk/env`.
 6. OpenRouter: hidden-input prompts for `OPENROUTER_API_KEY` and optional
    `OPENROUTER_MANAGEMENT_KEY`, written to `~/.subtrk/env` (created if absent).
@@ -407,7 +405,7 @@ other interactive command; this one re-runs the provider's own login flow:
   --console-site international` (Windows `.cmd` shim through the shell; 300s
   budget – bl blocks on the browser callback and has its own idle timeout).
 - google: a probe – the self-refresh path mints a fresh access token from the
-  stored non-rotating refresh token (read-only, no write-back to either store).
+  stored non-rotating refresh token (read-only, no write-back to the keyring).
 
 Contract:
 
