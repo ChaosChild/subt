@@ -19,7 +19,7 @@ shared cache so concurrent agents never hammer provider endpoints.
 | `subt status --fresh` | Bypass cache TTLs once (Claude's 300s floor still applies — warns) |
 | `subt status --strict` | Exit 3 if any provider failed |
 | `subt init` | One-time interactive setup (the only interactive command) |
-| `subt serve` | M2 — local web dashboard. Not in M1 |
+| `subt serve` | Local web console on 127.0.0.1 (see §`subt serve`) |
 
 Every subcommand supports `--help`; unknown flags exit 2 (fail loud).
 
@@ -372,8 +372,36 @@ errors + exit codes, agent commands never prompt · content-first (bare `subt` =
 `--confirm` gating reserved for any future state-changing operation (e.g. grant
 redemption, if ever un-parked).
 
+## `subt serve` — local web console
+
+One page for every provider, served from the same cache the CLI reads.
+
+- Binds **127.0.0.1 only**, on a random port (`--port N` to pin one). Startup
+  prints a single URL: `http://127.0.0.1:<port>/#<token>` — the token is a
+  fresh 32-byte random value per run, carried in the URL **fragment** so it
+  never reaches server logs or `Referer`. The browser is not auto-opened (the
+  URL contains the token, and tokens never go into argv).
+- `GET /` → the static shell (`src/console.html`), served without auth (it
+  contains no data) with `Content-Security-Policy: default-src 'none';
+  script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'
+  data:; connect-src 'self'`. The shell reads the token from the fragment and
+  sends it as `Authorization: Bearer <token>` on every API call; on 401 it
+  tells the user to restart `subt serve` and open the fresh URL.
+- `GET /api/status` → the identical scrubbed StatusOutput JSON that
+  `subt status --json` prints, refreshed through the same cache (TTLs
+  honored). The Bearer compare is timing-safe; missing/wrong token → 401.
+- Hardening: the Host header must be `127.0.0.1[:port]` or
+  `localhost[:port]` (403 otherwise — DNS-rebinding defense); no CORS headers
+  are ever emitted, so cross-site pages can neither read responses nor pass
+  the preflight a custom header requires; GET-only (405 otherwise); handlers
+  never throw. Ctrl-C shuts down cleanly.
+- The dashboard: per-provider cards (usage bars per window with ≥80%/≥95%
+  warning levels, credits, staleness, error kinds with hints), a 7-day reset
+  timeline, an upcoming-resets table, an agent-view terminal panel, and
+  auto-refresh at `recheckAfter`.
+
 ## Not in v0 (parked)
 
 cedar_ember reset grants (read+redeem API exists; un-park when wanted) ·
-TOON serializer · statusline/agent-skill ambient context (post-M2) · `subt serve`
-dashboard (M2) · TTL/threshold config knobs.
+TOON serializer · statusline/agent-skill ambient context (post-M2) ·
+TTL/threshold config knobs.

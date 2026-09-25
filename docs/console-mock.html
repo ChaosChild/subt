@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>subt console</title>
+<meta name="description" content="M2 design mock of the subt serve web console — static, with mock data.">
+<!-- ponytail: system font stacks, no web fonts — the real page is served offline from 127.0.0.1 and must not call out to a CDN -->
+<style>
+:root {
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Inter", "Helvetica Neue", Arial, sans-serif;
+  --mono: "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --border: #e3e6eb;
+  --border-strong: #d2d7df;
+  --text: #0f1720;
+  --text-2: #4a5462;
+  --text-3: #7b8594;
+  --accent: #4f46e5;
+  --accent-soft: #eef0ff;
+  --ok: #0f8a5f;
+  --ok-soft: #e6f5ee;
+  --warn: #b26a00;
+  --warn-soft: #fdf3e2;
+  --crit: #c8322b;
+  --crit-soft: #fdecea;
+  --muted-soft: #eef0f3;
+  --track: #e9ecf0;
+  --shadow: 0 1px 2px rgba(15, 23, 32, .04), 0 1px 3px rgba(15, 23, 32, .06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0d11; --surface: #12151b; --surface-2: #181c23; --border: #232832; --border-strong: #2e3440;
+    --text: #e8ebf0; --text-2: #a3abb8; --text-3: #6f7886;
+    --accent: #8b87ff; --accent-soft: #1d1c3a;
+    --ok: #3ccf91; --ok-soft: #10261d; --warn: #f0b340; --warn-soft: #2a2110; --crit: #ff6b61; --crit-soft: #2e1413;
+    --muted-soft: #1b1f27; --track: #232833; --shadow: 0 1px 2px rgba(0,0,0,.3);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0d11; --surface: #12151b; --surface-2: #181c23; --border: #232832; --border-strong: #2e3440;
+  --text: #e8ebf0; --text-2: #a3abb8; --text-3: #6f7886;
+  --accent: #8b87ff; --accent-soft: #1d1c3a;
+  --ok: #3ccf91; --ok-soft: #10261d; --warn: #f0b340; --warn-soft: #2a2110; --crit: #ff6b61; --crit-soft: #2e1413;
+  --muted-soft: #1b1f27; --track: #232833; --shadow: 0 1px 2px rgba(0,0,0,.3);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text); font: 14px/1.5 var(--font);
+  -webkit-font-smoothing: antialiased; font-feature-settings: "tnum" 1, "cv11" 1;
+}
+.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+@media (max-width: 640px) { .wrap { padding: 0 16px; } }
+
+/* header */
+header { border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 5; }
+.bar { display: flex; align-items: center; gap: 16px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: -.01em; font-size: 15px; }
+.logo { width: 26px; height: 26px; border-radius: 7px; background: var(--text); color: var(--bg); display: grid; place-items: center; font: 700 13px var(--mono); }
+.brand small { color: var(--text-3); font-weight: 500; font-size: 13px; }
+.spacer { flex: 1; }
+.meta { display: flex; align-items: center; gap: 14px; color: var(--text-2); font-size: 12.5px; }
+.meta .sep { width: 1px; height: 16px; background: var(--border); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; box-shadow: 0 0 0 3px var(--ok-soft); }
+.mockchip { white-space: nowrap; font: 600 11px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--warn); background: var(--warn-soft); padding: 3px 8px; border-radius: 999px; }
+.iconbtn { border: 1px solid var(--border); background: var(--surface); color: var(--text-2); width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; cursor: pointer; }
+.iconbtn:hover { color: var(--text); border-color: var(--border-strong); }
+.iconbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 860px) { .meta .hide-sm { display: none; } }
+@media (max-width: 640px) { .meta { display: none; } }
+.summary > *, .grid > *, .two > * { min-width: 0; }
+
+main.wrap { padding-top: 28px; padding-bottom: 48px; display: grid; gap: 20px; }
+
+/* summary */
+.summary { display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 12px; }
+@media (max-width: 1000px) { .summary { grid-template-columns: 1fr 1fr; } .summary .next { grid-column: 1 / -1; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.stat { padding: 16px 18px; }
+.label { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); }
+.stat .value { font-size: 26px; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; }
+.stat .sub { color: var(--text-2); font-size: 12.5px; margin-top: 2px; }
+.next { background: linear-gradient(135deg, var(--accent-soft), var(--surface) 70%); }
+.next .value { font-family: var(--mono); font-size: 30px; }
+.next .value .u { color: var(--text-3); font-size: 18px; margin: 0 6px 0 1px; }
+
+/* section headings */
+.sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 2px 10px; }
+.sechead h2 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+.sechead p { margin: 0; color: var(--text-3); font-size: 12.5px; }
+
+/* providers */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 1000px) { .grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+.prov { padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 12px; }
+.prov.crit { border-color: color-mix(in srgb, var(--crit) 45%, var(--border)); }
+.phead { display: flex; align-items: flex-start; gap: 10px; }
+.pmark { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; font: 700 12px var(--mono); color: #fff; flex: none; }
+.pname { font-weight: 650; font-size: 14.5px; line-height: 1.25; }
+.pplan { color: var(--text-3); font-size: 12.5px; }
+.badge { margin-left: auto; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.b-ok { color: var(--ok); background: var(--ok-soft); }
+.b-warn { color: var(--warn); background: var(--warn-soft); }
+.b-crit { color: var(--crit); background: var(--crit-soft); }
+.b-muted { color: var(--text-2); background: var(--muted-soft); }
+
+.scope { font-size: 11.5px; color: var(--text-3); font-weight: 600; margin: 2px 0 -4px; font-family: var(--mono); }
+.win { display: grid; gap: 5px; }
+.wtop { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.wkind { font: 600 12px var(--mono); color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); padding: 0 6px; border-radius: 5px; }
+.wpct { margin-left: auto; font-family: var(--mono); font-weight: 600; }
+.wpct small { color: var(--text-3); font-weight: 500; }
+.track { height: 6px; background: var(--track); border-radius: 999px; overflow: hidden; }
+.fill { height: 100%; border-radius: 999px; background: var(--ok); }
+.fill.warn { background: var(--warn); } .fill.crit { background: var(--crit); }
+.wreset { font-size: 12px; color: var(--text-3); display: flex; justify-content: space-between; gap: 8px; }
+.wreset b { color: var(--text-2); font-weight: 500; font-family: var(--mono); }
+
+.credits { display: flex; align-items: baseline; gap: 6px; }
+.credits .big { font: 650 22px var(--mono); letter-spacing: -.02em; }
+.credits .of { color: var(--text-3); font-family: var(--mono); font-size: 13px; }
+.note { font-size: 12.5px; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.err { font-size: 12.5px; border-radius: 8px; padding: 8px 10px; background: var(--warn-soft); color: var(--text); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); }
+.err .k { font: 600 12px var(--mono); color: var(--warn); }
+.err .h { color: var(--text-2); margin-top: 2px; }
+.err .h code { font-family: var(--mono); font-size: 12px; }
+.pfoot { margin-top: auto; padding-top: 10px; border-top: 1px dashed var(--border); display: flex; gap: 12px; font-size: 11.5px; color: var(--text-3); }
+.pfoot span b { color: var(--text-2); font-weight: 500; font-family: var(--mono); }
+
+/* timeline */
+.tl { padding: 16px 18px 12px; }
+.tlrow { display: grid; grid-template-columns: 130px 1fr; align-items: center; height: 30px; }
+.tlrow .n { font-size: 12.5px; color: var(--text-2); font-weight: 550; }
+.lane { position: relative; height: 100%; border-left: 1px solid var(--border); }
+.lane::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--border); }
+.mark { position: absolute; top: 50%; transform: translate(-50%, -50%); z-index: 1; font: 600 10.5px var(--mono); padding: 1px 6px; border-radius: 5px; white-space: nowrap; border: 1px solid; background: var(--surface); }
+.mark.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.mark.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.mark.crit { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 50%, transparent); }
+.mark.beyond { transform: translate(-100%, -50%); }
+.axis { display: grid; grid-template-columns: 130px 1fr; margin-top: 4px; }
+.ticks { position: relative; height: 18px; font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+.ticks span { position: absolute; transform: translateX(-50%); }
+.ticks span:first-child { transform: none; }
+.now { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--accent); }
+
+/* bottom row */
+.two { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; }
+@media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); padding: 10px 18px; border-bottom: 1px solid var(--border); }
+td { padding: 9px 18px; white-space: nowrap; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: 0; }
+td.r, th.r { text-align: right; }
+.tablewrap { overflow-x: auto; }
+.term { margin: 0; padding: 14px 18px; font: 12.5px/1.65 var(--mono); color: var(--text-2); overflow-x: auto; white-space: pre; }
+.term .c { color: var(--text-3); } .term .w { color: var(--crit); } .term .s { color: var(--warn); } .term .p { color: var(--accent); }
+.cardhead { padding: 12px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.cardhead h3 { margin: 0; font-size: 13.5px; font-weight: 650; }
+.cardhead span { font-size: 12px; color: var(--text-3); font-family: var(--mono); }
+
+footer { color: var(--text-3); font-size: 12px; border-top: 1px solid var(--border); padding: 18px 0 32px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+footer code { font-family: var(--mono); color: var(--text-2); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 4px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <div class="brand"><div class="logo">s</div>subt <small>console</small></div>
+    <span class="mockchip" title="Static design mock — numbers are fixtures, not live data">Mock data</span>
+    <div class="spacer"></div>
+    <div class="meta">
+      <span class="hide-sm"><span class="dot"></span>&nbsp; 127.0.0.1:52817 · token auth</span>
+      <span class="sep hide-sm"></span>
+      <span>checked <b class="num" id="checked"></b></span>
+      <span class="sep"></span>
+      <span>next refresh <b class="num" id="recheck"></b></span>
+    </div>
+    <button class="iconbtn" id="theme" aria-label="Toggle colour theme" title="Toggle colour theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="summary" id="summary" aria-label="Summary"></section>
+
+  <section aria-labelledby="h-prov">
+    <div class="sechead"><h2 id="h-prov">Providers</h2><p>Bars show <b>used</b> share of each window · ≥80% warning · ≥95% critical</p></div>
+    <div class="grid" id="providers"></div>
+  </section>
+
+  <section aria-labelledby="h-tl">
+    <div class="sechead"><h2 id="h-tl">Reset timeline</h2><p>Next 7 days · label = current usage of the window that resets</p></div>
+    <div class="card tl" id="timeline"></div>
+  </section>
+
+  <section class="two">
+    <div class="card">
+      <div class="cardhead"><h3>Upcoming resets</h3><span>sorted by time</span></div>
+      <div class="tablewrap"><table id="resets"><thead><tr><th>Provider</th><th>Window</th><th class="r">Used</th><th class="r">Resets</th><th class="r">In</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="cardhead"><h3>Same data, agent view</h3><span>subt status</span></div>
+      <pre class="term" id="term"></pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="legend">
+      <span><i style="background:var(--ok)"></i>&lt;80% used</span>
+      <span><i style="background:var(--warn)"></i>≥80%</span>
+      <span><i style="background:var(--crit)"></i>≥95%</span>
+      <span>[stale] = cached past TTL or served after an error</span>
+    </div>
+    <div>Served by <code>subt serve</code> from <code>~/.subt/cache.json</code> · JSON at <code>/api/status</code> · read-only · secrets redacted</div>
+  </div>
+</footer>
+
+<script>
+// Mock /api/status payload — same shape as `subt status --json` (docs/spec.md).
+// ponytail: fixed clock so the mock always reads sensibly; the real page uses Date.now().
+const NOW = new Date("2026-09-23T13:20:00").getTime();
+const T0 = Date.now();
+const now = () => NOW + (Date.now() - T0);
+const at = s => new Date(s).toISOString();
+
+const STATUS = {
+  schemaVersion: 1,
+  checkedAt: at("2026-09-23T13:20:00"),
+  recheckAfter: at("2026-09-23T13:21:00"),
+  providers: [
+    { id: "claude", ok: true, stale: false, fetchedAt: at("2026-09-23T13:17:40"), plan: "Claude Pro",
+      windows: [
+        { kind: "5h", usedPercent: 13, resetsAt: at("2026-09-23T18:04:00") },
+        { kind: "7d", usedPercent: 96, resetsAt: at("2026-09-25T09:00:00") } ] },
+    { id: "glm", ok: true, stale: false, fetchedAt: at("2026-09-23T13:19:30"), plan: "GLM Legacy 2 Max",
+      windows: [
+        { kind: "5h", usedPercent: 4, resetsAt: at("2026-09-23T19:47:00") },
+        { kind: "weekly", usedPercent: 61, resetsAt: at("2026-09-28T00:00:00") } ] },
+    { id: "alibaba", ok: true, stale: false, fetchedAt: at("2026-09-23T13:16:05"), plan: "Token Plan · standard",
+      windows: [ { kind: "30d", usedPercent: 30.6, resetsAt: at("2026-10-12T00:00:00") } ],
+      credits: { total: 45000, remaining: 31240, unit: "credits", cycleEndsAt: at("2026-10-12T00:00:00"), source: "derived" } },
+    { id: "google", ok: false, stale: true, fetchedAt: at("2026-09-23T13:02:10"), plan: "Google AI Pro",
+      windows: [
+        { kind: "5h", scope: "gemini-models", remainingFraction: 0.62, resetsAt: at("2026-09-23T16:40:00") },
+        { kind: "weekly", scope: "gemini-models", remainingFraction: 0.81, resetsAt: at("2026-09-27T08:00:00") },
+        { kind: "5h", scope: "claude-and-gpt-models", remainingFraction: 0.14, resetsAt: at("2026-09-23T15:10:00") },
+        { kind: "weekly", scope: "claude-and-gpt-models", remainingFraction: 0.47, resetsAt: at("2026-09-27T08:00:00") } ],
+      error: { kind: "timeout", message: "quota summary did not answer within 10s", hint: "showing cached values; retried automatically" } },
+    { id: "opencode", ok: true, stale: false, fetchedAt: at("2026-09-23T13:20:00"), plan: "Zen pay-as-you-go",
+      note: "PAYG — no usage/balance API; inference errors are the only signal" },
+    { id: "openrouter", ok: true, stale: false, fetchedAt: at("2026-09-23T13:19:55"), plan: "Pay-as-you-go",
+      credits: { total: 100, remaining: 74.75, unit: "usd", source: "api" }, note: "key today $1.20" },
+  ],
+  nextEvent: { providerId: "claude", type: "window-reset", at: at("2026-09-23T18:04:00") },
+};
+
+const META = {
+  claude:     { name: "Anthropic", color: "#c96442", ttl: 300 },
+  glm:        { name: "Z.ai",      color: "#2f6fed", ttl: 60 },
+  alibaba:    { name: "Alibaba Cloud", color: "#ff6a00", ttl: 300 },
+  google:     { name: "Google",    color: "#1a73e8", ttl: 60 },
+  opencode:   { name: "OpenCode",  color: "#3f3f46", ttl: 0 },
+  openrouter: { name: "OpenRouter", color: "#6467f2", ttl: 60 },
+};
+
+// Vendor strings go through esc() — never raw into innerHTML (the real page renders third-party text).
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const used = w => w.usedPercent ?? (1 - w.remainingFraction) * 100;
+const level = p => p >= 95 ? "crit" : p >= 80 ? "warn" : "ok";
+const pad = n => String(n).padStart(2, "0");
+const hm = t => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const when = t => {
+  const d = new Date(t), n = new Date(now());
+  if (d.toDateString() === n.toDateString()) return `today ${hm(t)}`;
+  const days = Math.round((new Date(d).setHours(0,0,0,0) - new Date(n).setHours(0,0,0,0)) / 864e5);
+  if (days === 1) return `tomorrow ${hm(t)}`;
+  return `${d.toLocaleDateString("en-GB", { weekday: days < 7 ? "short" : undefined, day: "numeric", month: "short" })} ${hm(t)}`;
+};
+const rel = ms => {
+  const s = Math.max(0, Math.round(ms / 1000)), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${pad(m)}m` : m ? `${m}m ${pad(s % 60)}s` : `${s}s`;
+};
+const ago = t => `${rel(now() - new Date(t))} ago`;
+const money = (v, unit) => unit === "usd" ? `$${v.toFixed(2)}` : v.toLocaleString("en-US");
+
+function badge(p) {
+  if (p.error && p.stale) return `<span class="badge b-warn">stale · ${esc(p.error.kind)}</span>`;
+  if (p.error) return `<span class="badge b-crit">${esc(p.error.kind)}</span>`;
+  if (!p.windows && !p.credits) return `<span class="badge b-muted">signals only</span>`;
+  const worst = Math.max(0, ...(p.windows || []).map(used));
+  return worst >= 95 ? `<span class="badge b-crit">window exhausted</span>`
+       : worst >= 80 ? `<span class="badge b-warn">running low</span>`
+       : `<span class="badge b-ok">healthy</span>`;
+}
+
+function windowHTML(w) {
+  const u = used(w), lv = level(u);
+  return `<div class="win">
+    <div class="wtop"><span class="wkind">${esc(w.kind)}</span><span class="wpct">${u.toFixed(0)}% <small>used</small></span></div>
+    <div class="track" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${u.toFixed(0)}" aria-label="${esc(w.kind)} window used"><div class="fill ${lv}" style="width:${u}%"></div></div>
+    <div class="wreset"><span>resets ${when(w.resetsAt)}</span><b data-until="${w.resetsAt}"></b></div>
+  </div>`;
+}
+
+function providerHTML(p) {
+  const m = META[p.id];
+  const worst = Math.max(0, ...(p.windows || []).map(used));
+  let body = "";
+  if (p.credits) {
+    const c = p.credits, pct = c.total ? (1 - c.remaining / c.total) * 100 : null;
+    body += `<div><div class="label">${c.unit === "usd" ? "Balance" : "Credits left"}</div>
+      <div class="credits"><span class="big">${money(c.remaining, c.unit)}</span>${c.total ? `<span class="of">/ ${money(c.total, c.unit)}</span>` : ""}</div>
+      ${pct != null ? `<div class="track" style="margin-top:6px"><div class="fill ${level(pct)}" style="width:${pct}%"></div></div>` : ""}
+      <div class="wreset" style="margin-top:5px"><span>${c.cycleEndsAt ? `cycle ends ${when(c.cycleEndsAt)}` : "no expiry"}</span><span>${c.source === "derived" ? "derived from %" : "from API"}</span></div></div>`;
+  }
+  if (p.windows && !p.credits) {
+    let scope = null;
+    for (const w of p.windows) {
+      if (w.scope && w.scope !== scope) { scope = w.scope; body += `<div class="scope">${esc(scope)}</div>`; }
+      body += windowHTML(w);
+    }
+  }
+  if (p.error) body += `<div class="err"><span class="k">${esc(p.error.kind)}</span> — ${esc(p.error.message)}${p.error.hint ? `<div class="h">${esc(p.error.hint)}</div>` : ""}</div>`;
+  if (p.note) body += `<div class="note">${esc(p.note)}</div>`;
+  return `<article class="card prov ${worst >= 95 ? "crit" : ""}">
+    <div class="phead"><div class="pmark" style="background:${m.color}">${esc(p.id.slice(0, 2).toUpperCase())}</div>
+      <div><div class="pname">${esc(m.name)}</div><div class="pplan">${esc(p.plan || "")}</div></div>${badge(p)}</div>
+    ${body}
+    <div class="pfoot"><span>fetched <b data-ago="${p.fetchedAt}"></b></span><span>ttl <b>${m.ttl ? m.ttl + "s" : "none"}</b></span><span>id <b>${esc(p.id)}</b></span></div>
+  </article>`;
+}
+
+function allWindows() {
+  return STATUS.providers.flatMap(p => (p.windows || []).map(w => ({ p, w, u: used(w) })))
+    .sort((a, b) => new Date(a.w.resetsAt) - new Date(b.w.resetsAt));
+}
+
+function summaryHTML() {
+  const ps = STATUS.providers, ne = STATUS.nextEvent;
+  const neW = ps.find(p => p.id === ne.providerId).windows.find(w => w.resetsAt === ne.at);
+  const hot = allWindows().filter(x => x.u >= 80);
+  const stale = ps.filter(p => p.stale).length, errs = ps.filter(p => p.error).length;
+  const usd = ps.filter(p => p.credits?.unit === "usd").reduce((s, p) => s + p.credits.remaining, 0);
+  return `
+  <div class="card stat next"><div class="label">Next reset · ${esc(ne.providerId)} ${esc(neW.kind)}</div>
+    <div class="value" id="nextcd"></div><div class="sub">at ${hm(ne.at)} · currently ${used(neW).toFixed(0)}% used — agents wake at <span class="mono">nextEvent.at</span></div></div>
+  <div class="card stat"><div class="label">Providers</div><div class="value">${ps.filter(p => p.ok).length}<span style="color:var(--text-3);font-size:18px"> / ${ps.length}</span></div><div class="sub">${errs ? `${errs} degraded` : "all reporting"}${stale ? ` · ${stale} stale` : ""}</div></div>
+  <div class="card stat"><div class="label">Windows ≥80%</div><div class="value" style="color:${hot.length ? "var(--crit)" : "var(--ok)"}">${hot.length}</div><div class="sub">${hot.map(x => `${esc(x.p.id)} ${esc(x.w.scope ? x.w.scope.split("-")[0] + " " : "")}${esc(x.w.kind)}`).join(", ") || "none"}</div></div>
+  <div class="card stat"><div class="label">Pay-as-you-go</div><div class="value num">$${usd.toFixed(2)}</div><div class="sub">OpenRouter balance · OpenCode untracked</div></div>
+  <div class="card stat"><div class="label">Alibaba credits</div><div class="value num">${(ps.find(p => p.id === "alibaba").credits.remaining / 1000).toFixed(1)}k</div><div class="sub">of 45k · ${rel(new Date("2026-10-12T00:00:00") - now()).split(" ")[0]} left in cycle</div></div>`;
+}
+
+function timelineHTML() {
+  const span = 7 * 864e5, start = now();
+  const pos = t => Math.min(100, (new Date(t) - start) / span * 100);
+  const lanes = STATUS.providers.filter(p => p.windows).flatMap(p =>
+    [...new Set(p.windows.map(w => w.scope))].map(sc => ({ p, sc, ws: p.windows.filter(w => w.scope === sc) })));
+  const rows = lanes.map(({ p, sc, ws }) => {
+    const marks = ws.map(w => {
+      const x = pos(w.resetsAt), beyond = x >= 100, u = used(w);
+      const lab = `${w.kind} ${u.toFixed(0)}%${beyond ? " →" : ""}`;
+      return `<span class="mark ${level(u)} ${beyond ? "beyond" : ""}" style="left:${x}%" title="${esc(w.kind)} resets ${when(w.resetsAt)}">${esc(lab)}</span>`;
+    }).join("");
+    return `<div class="tlrow"><span class="n">${esc(p.id)}${sc ? ` <span style="color:var(--text-3)">· ${esc(sc.split("-")[0])}</span>` : ""}</span><div class="lane">${marks}</div></div>`;
+  }).join("");
+  const ticks = Array.from({ length: 8 }, (_, i) => {
+    const d = new Date(start + i * 864e5);
+    return `<span style="left:${i / 7 * 100}%">${i === 0 ? "now" : d.toLocaleDateString("en-GB", { weekday: "short" })}</span>`;
+  }).join("");
+  return rows + `<div class="axis"><span></span><div class="ticks">${ticks}</div></div>`;
+}
+
+function resetsHTML() {
+  return allWindows().map(({ p, w, u }) => `<tr>
+    <td>${esc(p.id)}${p.stale ? ` <span style="color:var(--warn);font-size:11px">[stale]</span>` : ""}</td>
+    <td class="mono">${esc(w.scope ? w.scope.split("-")[0] + " " : "")}${esc(w.kind)}</td>
+    <td class="r num" style="color:var(--${u >= 80 ? level(u) : "text"})">${u.toFixed(0)}%</td>
+    <td class="r num">${when(w.resetsAt)}</td>
+    <td class="r num" data-until="${w.resetsAt}"></td></tr>`).join("");
+}
+
+function termHTML() {
+  const line = p => {
+    const segs = [];
+    if (p.credits) segs.push(p.credits.unit === "usd" ? `${money(p.credits.remaining, "usd")} left` : `credits ${money(p.credits.remaining)}/${money(p.credits.total)}`);
+    if (p.credits?.cycleEndsAt) segs.push(`cycle ends ${new Date(p.credits.cycleEndsAt).toLocaleDateString("en-CA")}`);
+    else if (p.windows) segs.push(...p.windows.map(w => {
+      const u = used(w), t = w.usedPercent != null ? `${u.toFixed(0)}%` : `${(w.remainingFraction * 100).toFixed(0)}% left`;
+      return `${w.scope ? w.scope.split("-")[0] + " " : ""}${w.kind} ${t}${u >= 95 ? ' <span class="w">!</span>' : ""}`;
+    }));
+    if (p.note) segs.push(esc(p.id === "opencode" ? "PAYG · no usage API (signals only)" : p.note));
+    return `${p.id.padEnd(11)}${segs.join(" · ")}${p.stale ? '   <span class="s">[stale]</span>' : ""}`;
+  };
+  return `<span class="p">$</span> subt\n${STATUS.providers.map(line).join("\n")}\n<span class="c">next: ${esc(STATUS.nextEvent.providerId)} 5h at ${hm(STATUS.nextEvent.at)}</span>\n\n<span class="p">$</span> curl -H "Authorization: Bearer ***" 127.0.0.1:52817/api/status\n<span class="c">{ "schemaVersion": 1, "nextEvent": { "providerId": "claude", … }, … }</span>`;
+}
+
+function tick() {
+  document.querySelectorAll("[data-until]").forEach(el => el.textContent = rel(new Date(el.dataset.until) - now()));
+  document.querySelectorAll("[data-ago]").forEach(el => el.textContent = ago(el.dataset.ago));
+  const ms = new Date(STATUS.nextEvent.at) - now(), s = Math.max(0, Math.floor(ms / 1000));
+  document.getElementById("nextcd").innerHTML = `${Math.floor(s / 3600)}<span class="u">h</span>${pad(Math.floor(s % 3600 / 60))}<span class="u">m</span>${pad(s % 60)}<span class="u">s</span>`;
+  document.getElementById("checked").textContent = ago(STATUS.checkedAt);
+  // ponytail: mock loops the heartbeat; the real page refetches /api/status at recheckAfter.
+  const r = ((new Date(STATUS.recheckAfter) - now()) % 60000 + 60000) % 60000;
+  document.getElementById("recheck").textContent = `${Math.ceil(r / 1000) || 60}s`;
+}
+
+document.getElementById("summary").innerHTML = summaryHTML();
+document.getElementById("providers").innerHTML = STATUS.providers.map(providerHTML).join("");
+document.getElementById("timeline").innerHTML = timelineHTML();
+document.querySelector("#resets tbody").innerHTML = resetsHTML();
+document.getElementById("term").innerHTML = termHTML();
+tick(); setInterval(tick, 1000);
+
+// Theme: follows the OS until toggled; the choice is a per-browser convenience only.
+const root = document.documentElement;
+try { const t = localStorage.getItem("subt-theme"); if (t) root.dataset.theme = t; } catch {}
+document.getElementById("theme").onclick = () => {
+  const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("subt-theme", root.dataset.theme); } catch {}
+};
+</script>
+</body>
+</html>

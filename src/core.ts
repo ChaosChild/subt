@@ -587,3 +587,68 @@ export function computeRecheckAfter(okTtlsMs: number[], nowMs: number = Date.now
   const clamped = Math.min(300_000, Math.max(60_000, min));
   return new Date(nowMs + clamped).toISOString();
 }
+
+// ---------- status collection (shared by `subt status` and `subt serve`) ----------
+
+export interface CollectStatusOpts {
+  subtDir?: string; // override ~/.subt (tests)
+  providers?: ProviderModule[]; // stub registry (tests); default: real registry, lazily imported
+  requested?: readonly string[]; // pre-validated --provider ids
+  fresh?: boolean; // bypass cache TTLs once (floors respected)
+}
+
+export async function collectStatus(
+  opts: CollectStatusOpts = {},
+): Promise<{ out: StatusOutput; ttlById: Map<string, number> }> {
+  const enabled = loadConfig(opts.subtDir).enabled;
+  const registry = opts.providers ?? (await import("./providers/index.ts")).allProviders;
+  const requested =
+    opts.requested !== undefined && opts.requested.length > 0
+      ? new Set<string>(opts.requested)
+      : null;
+  const selected = registry.filter(
+    (m) => enabled.includes(m.id) && (!requested || requested.has(m.id)),
+  );
+  if (selected.length === 0) {
+    throw new Error("no providers selected — check ~/.subt/config.json or --provider");
+  }
+  const fresh = opts.fresh === true;
+  if (fresh && selected.some((m) => (FRESH_FLOOR_IDS as readonly string[]).includes(m.id))) {
+    console.error("claude keeps its 300s floor");
+  }
+  const cachePath = join(opts.subtDir ?? SUBT_DIR, "cache.json");
+  const nowMs = Date.now();
+  const settled = await Promise.allSettled(
+    selected.map((m) =>
+      fetchProvider(m, {
+        cachePath,
+        fresh: fresh && !(FRESH_FLOOR_IDS as readonly string[]).includes(m.id),
+      }),
+    ),
+  );
+  const results: ProviderResult[] = settled.map((s, i) => {
+    if (s.status === "fulfilled") return s.value;
+    return {
+      id: selected[i].id,
+      ok: false,
+      stale: false,
+      fetchedAt: new Date().toISOString(),
+      error: { kind: "parse-failure", message: `internal error: ${errorMessage(s.reason)}` },
+    };
+  });
+  const ttlById = new Map(selected.map((m) => [m.id, m.ttlMs] as const));
+  const okTtls = selected.filter((_, i) => results[i].ok).map((m) => m.ttlMs);
+  return {
+    out: {
+      schemaVersion: 1,
+      checkedAt: new Date(nowMs).toISOString(),
+      recheckAfter: computeRecheckAfter(okTtls, nowMs),
+      providers: results,
+      nextEvent: computeNextEvent(
+        results.map((r) => ({ result: r, ttlMs: ttlById.get(r.id) ?? 0 })),
+        nowMs,
+      ),
+    },
+    ttlById,
+  };
+}

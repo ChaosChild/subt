@@ -21,6 +21,20 @@ next: claude 5h at 18:09 (4h 49m)
 help: subt status --json | subt status --provider <id> | subt init
 ```
 
+## Web console
+
+```bash
+subt serve
+```
+
+Starts the dashboard on a random `127.0.0.1` port and prints the URL to open —
+one page for all six providers: usage bars per window (with ≥80%/≥95% warning
+levels), credit pools, a 7-day reset timeline, upcoming resets, and the same
+agent view the CLI prints, auto-refreshing on the cache heartbeat. The server
+is loopback-only, requires a per-run token (delivered in the printed URL),
+never emits CORS headers, and serves read-only JSON — see
+[`docs/spec.md`](docs/spec.md) §`subt serve` for the security design.
+
 ## Why
 
 Modern AI workstations juggle several subscriptions with different windows (5-hour,

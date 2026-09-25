@@ -4,13 +4,12 @@
 
 `subt status` + `subt init`, all six providers, TTL cache, tests.
 
-## M2 — Web console (next)
+## M2 — Web console (done)
 
-`subt serve`: `node:http` server on 127.0.0.1 (random port + random local auth
-token — see the security note in `docs/implementation-plan.md`), serving one
-static HTML dashboard + `/api/status` JSON from the same cache. One page
-replaces the six vendor tabs: per-provider windows, credits, staleness, next
-reset countdown. No framework, no build step.
+`subt serve`: loopback-only server (random port + per-run token auth — see
+`docs/spec.md` §`subt serve`), static dashboard + `/api/status` from the same
+cache. One page replaces the six vendor tabs: per-provider windows, credits,
+staleness, reset timeline and countdowns.
 
 ## M3 — Combined usage views
 

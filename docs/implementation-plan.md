@@ -7,8 +7,10 @@ How the codebase is organized, the rules all code follows, and how to extend it.
 ```
 package.json          bin "subt", type module, engines >=22.18, zero dependencies
 src/cli.ts            entry point: arg parsing, orchestration, rendering, exit codes
+src/serve.ts          the `subt serve` web console backend (see docs/spec.md)
+src/console.html      the console dashboard page (served at /)
 src/init.ts           one-time interactive setup (the only interactive command)
-src/core.ts           types, config, ~/.subt/env parser, TTL cache, redaction, scheduling math
+src/core.ts           types, config, ~/.subt/env parser, TTL cache, redaction, scheduling math, collectStatus
 src/providers/*.ts    one module per provider — the only code that knows endpoints
 test/*.test.ts        node:test suites (fixtures only; tests never touch the network)
 test/fixtures/        captured real response shapes per provider
@@ -73,10 +75,3 @@ npm test          # node --test over test/*.test.ts
 
 Tests are fixture-driven and offline. Live verification of a provider is a
 manual step: `subt status --provider <id> --fresh` and reading the output.
-
-## M2 note (dashboard)
-
-`subt serve` must bind 127.0.0.1 only, on a random port, and require a random
-per-run auth token on every request — an unauthenticated localhost port is
-readable by any local process and probeable by any web page. Resolve this
-before writing any server code.

@@ -1,30 +1,26 @@
 #!/usr/bin/env node
-// cli.ts — subt entry point. `subt` / `subt status` / `subt init`.
+// cli.ts — subt entry point. `subt` / `subt status` / `subt init` / `subt serve`.
 // The providers registry lives in ./providers/index.ts (allProviders) and is
-// imported lazily so tests can inject a stub registry via main()'s deps seam.
+// imported lazily (from collectStatus) so tests can inject a stub registry via
+// main()'s deps seam.
 import { parseArgs } from "node:util";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { realpathSync } from "node:fs";
 import {
   ALL_PROVIDER_IDS,
-  FRESH_FLOOR_IDS,
-  SUBT_DIR,
-  computeNextEvent,
-  computeRecheckAfter,
+  collectStatus,
   errorMessage,
-  fetchProvider,
-  loadConfig,
   scrub,
   scrubValue,
   type Credits,
-  type ProviderId,
   type ProviderModule,
   type ProviderResult,
   type StatusOutput,
   type Window,
 } from "./core.ts";
 import { runInit } from "./init.ts";
+import { runServe } from "./serve.ts";
 
 export interface CliDirs {
   subt?: string; // override ~/.subt (tests)
@@ -44,6 +40,7 @@ usage:
   subt                  same as: subt status
   subt status [flags]   probe enabled providers, compact text
   subt init             one-time interactive setup
+  subt serve            local web console (read-only, loopback only)
 
 status flags:
   --json                machine-readable output (schemaVersion 1)
@@ -54,6 +51,12 @@ status flags:
   -h, --help            this screen
 
 exit codes: 0 ran · 1 runtime failure · 2 usage error · 3 --strict violation`;
+
+const SERVE_USAGE = `subt serve — local web console (read-only, loopback only)
+
+Serves one URL, http://127.0.0.1:<port>/#<token> — the per-run random token rides
+the fragment, never argv or logs; API calls need Authorization: Bearer <token>.
+Ctrl-C stops the server. flag: --port N (default: random ephemeral port)`;
 
 const INIT_USAGE = `subt init — one-time interactive setup
 
@@ -183,6 +186,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
         fields: { type: "string" },
         fresh: { type: "boolean", default: false },
         strict: { type: "boolean", default: false },
+        port: { type: "string" },
         help: { type: "boolean", short: "h", default: false },
       },
     });
@@ -196,14 +200,32 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     return 2;
   }
   const cmd = positionals[0] ?? "status"; // bare `subt` = status, never help
-  const { json, provider = [], fields, fresh, strict, help } = parsed.values;
+  const { json, provider = [], fields, fresh, strict, port, help } = parsed.values;
   if (help) {
-    console.log(cmd === "init" ? INIT_USAGE : USAGE);
+    console.log(cmd === "init" ? INIT_USAGE : cmd === "serve" ? SERVE_USAGE : USAGE);
     return 0;
   }
   if (cmd === "init") {
     try {
       await runInit({ subtDir: deps.dirs?.subt });
+      return 0;
+    } catch (err) {
+      console.error(`subt: ${errorMessage(err)}`);
+      return 1;
+    }
+  }
+  if (cmd === "serve") {
+    if (port !== undefined && !/^\d+$/.test(port)) {
+      console.error("subt: --port must be a non-negative integer");
+      return 2;
+    }
+    const portNum = port === undefined ? 0 : Number(port); // 0 = random ephemeral
+    if (portNum > 65535) {
+      console.error("subt: --port must be at most 65535");
+      return 2;
+    }
+    try {
+      await runServe({ providers: deps.providers, subtDir: deps.dirs?.subt, port: portNum });
       return 0;
     } catch (err) {
       console.error(`subt: ${errorMessage(err)}`);
@@ -227,73 +249,30 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     }
   }
 
-  let enabled: ProviderId[];
-  try {
-    enabled = loadConfig(deps.dirs?.subt).enabled;
-  } catch (err) {
-    console.error(`subt: ${errorMessage(err)}`);
-    return 1;
-  }
-
   const badProvider = provider.find((id) => !(ALL_PROVIDER_IDS as readonly string[]).includes(id));
   if (badProvider) {
     console.error(`subt: unknown provider '${badProvider}'`);
     return 2;
   }
 
-  const registry: ProviderModule[] =
-    deps.providers ?? (await import("./providers/index.ts")).allProviders;
-  const requested = provider.length > 0 ? new Set<string>(provider) : null;
-  const selected = registry.filter(
-    (m) => enabled.includes(m.id) && (!requested || requested.has(m.id)),
-  );
-  if (selected.length === 0) {
-    console.error("subt: no providers selected — check ~/.subt/config.json or --provider");
+  let collected;
+  try {
+    collected = await collectStatus({
+      subtDir: deps.dirs?.subt,
+      providers: deps.providers,
+      requested: provider,
+      fresh: fresh === true,
+    });
+  } catch (err) {
+    console.error(`subt: ${errorMessage(err)}`);
     return 1;
   }
-
-  if (fresh && selected.some((m) => (FRESH_FLOOR_IDS as readonly string[]).includes(m.id))) {
-    console.error("claude keeps its 300s floor");
-  }
-
-  const cachePath = join(deps.dirs?.subt ?? SUBT_DIR, "cache.json");
-  const nowMs = Date.now();
-  const settled = await Promise.allSettled(
-    selected.map((m) =>
-      fetchProvider(m, {
-        cachePath,
-        fresh: fresh === true && !(FRESH_FLOOR_IDS as readonly string[]).includes(m.id),
-      }),
-    ),
-  );
-  const results: ProviderResult[] = settled.map((s, i) => {
-    if (s.status === "fulfilled") return s.value;
-    return {
-      id: selected[i].id,
-      ok: false,
-      stale: false,
-      fetchedAt: new Date().toISOString(),
-      error: { kind: "parse-failure", message: `internal error: ${errorMessage(s.reason)}` },
-    };
-  });
-
-  const ttlById = new Map(selected.map((m) => [m.id, m.ttlMs] as const));
-  const okTtls = selected.filter((_, i) => results[i].ok).map((m) => m.ttlMs);
-  const out: StatusOutput = {
-    schemaVersion: 1,
-    checkedAt: new Date(nowMs).toISOString(),
-    recheckAfter: computeRecheckAfter(okTtls, nowMs),
-    providers: results,
-    nextEvent: computeNextEvent(
-      results.map((r) => ({ result: r, ttlMs: ttlById.get(r.id) ?? 0 })),
-      nowMs,
-    ),
-  };
+  const { out, ttlById } = collected;
 
   if (json) console.log(JSON.stringify(scrubValue(out)));
-  else for (const line of renderText(out, fieldSet, nowMs, ttlById)) console.log(line);
+  else for (const line of renderText(out, fieldSet, Date.now(), ttlById)) console.log(line);
 
-  return strict === true && results.some((r) => !r.ok) ? 3 : 0;
+  return strict === true && out.providers.some((r) => !r.ok) ? 3 : 0;
 }
 
 const isDirectRun =
