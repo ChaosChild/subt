@@ -44,12 +44,18 @@ interface GlmLimit {
 
 // Pure: data.limits[] TOKENS_LIMIT entries -> windows (unit 3 = hours, unit 6 = weeks);
 // TIME_LIMIT entries are built-in-tool quota and ignored in v0. data.level -> plan label.
-export function parseGlmQuota(body: unknown): { windows: Window[]; plan?: string } | null {
-  if (typeof body !== "object" || body === null) return null;
+// Empty state: a JSON-object body with no data.limits (data missing/null, or no limits
+// array) means the current window has had zero GLM queries – limits appear after the
+// first query, typically right after a window reset -> { windows: [], empty: true }.
+// null is reserved for bodies that are not JSON objects at all, arrays included
+// (probe maps that to parse-failure with the existing message).
+export function parseGlmQuota(body: unknown): { windows: Window[]; plan?: string; empty?: true } | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
   const data = (body as { data?: unknown }).data;
-  if (typeof data !== "object" || data === null) return null;
+  if (typeof data !== "object" || data === null) return { windows: [], empty: true };
   const d = data as { limits?: unknown; level?: unknown };
-  if (!Array.isArray(d.limits)) return null;
+  const plan = typeof d.level === "string" || typeof d.level === "number" ? `GLM ${String(d.level)}` : undefined;
+  if (!Array.isArray(d.limits)) return plan ? { windows: [], plan, empty: true } : { windows: [], empty: true };
   const windows: Window[] = [];
   for (const raw of d.limits) {
     if (typeof raw !== "object" || raw === null) continue;
@@ -65,7 +71,6 @@ export function parseGlmQuota(body: unknown): { windows: Window[]; plan?: string
     else continue; // unknown unit – ignore entry
     windows.push({ kind, usedPercent: l.percentage, resetsAt: new Date(l.nextResetTime).toISOString() });
   }
-  const plan = typeof d.level === "string" || typeof d.level === "number" ? `GLM ${String(d.level)}` : undefined;
   return { windows, plan };
 }
 
@@ -201,7 +206,19 @@ async function probeInner(): Promise<ProviderResult> {
   }
   const parsed = parseGlmQuota(body);
   if (!parsed) return fail({ kind: "parse-failure", message: "quota response missing data.limits" }, fetchedAt);
-  return { id: "glm", ok: true, stale: false, fetchedAt, plan: parsed.plan, windows: parsed.windows };
+  const result: ProviderResult = {
+    id: "glm",
+    ok: true,
+    stale: false,
+    fetchedAt,
+    plan: parsed.plan,
+    windows: parsed.windows,
+  };
+  if (parsed.empty) {
+    // Post-reset idle window – the monitor omits data.limits until the first query.
+    result.note = "no usage reported yet in the current window – appears after the first GLM query";
+  }
+  return result;
 }
 
 const provider: ProviderModule = {
