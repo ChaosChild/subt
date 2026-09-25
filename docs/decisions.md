@@ -1,4 +1,4 @@
-# subt — Design Decisions
+# subtrk — Design Decisions
 
 Rationale for the choices that shape the tool. Provider facts referenced here
 were verified against vendor source code or live endpoints.
@@ -7,7 +7,7 @@ were verified against vendor source code or live endpoints.
 
 No balance or usage API exists for Zen pay-as-you-go: PAYG keys receive
 `403 EntitlementError` on the usage endpoint, and the dollar balance is served
-only to the web console session (verified against sst/opencode source). subt
+only to the web console session (verified against sst/opencode source). subtrk
 reports a constant signals-only note; the real signals (401 `CreditsError`,
 429 window metadata) surface during inference. Revisit if Zen ships an API.
 
@@ -37,9 +37,9 @@ sk-sp- inference endpoint (`token-plan.*.maas.aliyuncs.com`) has no quota
 surface. Direct AK-signed OpenAPI calls are the future upgrade if the `bl`
 dependency is ever dropped.
 
-## D3 · CLI name — `subt`
+## D3 · CLI name — `subtrk`
 
-`subt status [--json] [--provider X]`, and bare `subt` = status (AXI
+`subtrk status [--json] [--provider X]`, and bare `subtrk` = status (AXI
 content-first). Short, because agents type it often.
 
 ## D4 · Claude polling — hard 300s floor, claude-code UA, shared cache
@@ -59,10 +59,10 @@ are the churn surface, and TS iterates fastest there. Go and Rust were
 considered and declined: new toolchain, no shared ecosystem with the Node CLIs
 around the tool, slower iteration.
 
-## D6 · Keys in `~/.subt/env`, written by `subt init`
+## D6 · Keys in `~/.subtrk/env`, written by `subtrk init`
 
 API keys are project/task-specific and do not belong in global environment
-variables. subt's own values live in `~/.subt/env` (dotenv format, tiny builtin
+variables. subtrk's own values live in `~/.subtrk/env` (dotenv format, tiny builtin
 parser; real process env still wins as an override):
 
 - `OPENROUTER_API_KEY`, `OPENROUTER_MANAGEMENT_KEY` — prompted (hidden input)
@@ -71,11 +71,11 @@ parser; real process env still wins as an override):
   installed-app constants, fetched from upstream sources by init (no literals
   in this repo, so secret scanners stay quiet)
 
-`subt init` runs the Alibaba login flow, prompts for the keys above, checks
+`subtrk init` runs the Alibaba login flow, prompts for the keys above, checks
 every provider's credential presence, and reports what is missing with honest
 per-step results. It is the only interactive command; everything agents call
 is non-interactive. Accepted trade-off: plaintext values inside the user
-profile — the same trust envelope as the vendor credential files subt reads;
+profile — the same trust envelope as the vendor credential files subtrk reads;
 the profile's per-user ACL is the boundary.
 
 ## D7 · Google — read agy's Credential Manager token, call the summary endpoint
@@ -103,7 +103,7 @@ with a `run agy /usage` hint. The `implicit/*.pb` files under
 
 Claude Code refreshes `~/.claude/.credentials.json` only while running, so the
 stored token is routinely expired when a headless agent reads it. When the
-access token is expired but the refresh token is live, subt refreshes via
+access token is expired but the refresh token is live, subtrk refreshes via
 `console.anthropic.com/v1/oauth/token` with Claude Code's public client id and
 writes the merged credential back atomically. The refresh **rotates the
 refresh token** — the new one must be persisted or the file goes stale for

@@ -1,5 +1,5 @@
 // opencode — Zen pay-as-you-go, presence check only (D1): no usage/balance API exists.
-// Key from env OPENCODE_API_KEY (core merges ~/.subt/env) or ~/.local/share/opencode/auth.json.
+// Key from env OPENCODE_API_KEY (core merges ~/.subtrk/env) or ~/.local/share/opencode/auth.json.
 // ttlMs 0 — bypasses the cache entirely.
 
 import { readFileSync } from "node:fs";
@@ -45,7 +45,10 @@ async function probeInner(): Promise<ProviderResult> {
   let key = await getSecret("OPENCODE_API_KEY");
   if (!key) {
     try {
-      key = extractOpencodeKey(JSON.parse(readFileSync(join(homedir(), ".local", "share", "opencode", "auth.json"), "utf8")));
+      key =
+        extractOpencodeKey(
+          JSON.parse(readFileSync(join(homedir(), ".local", "share", "opencode", "auth.json"), "utf8")),
+        ) ?? undefined;
     } catch {
       // absent or unreadable — treated as no key
     }
@@ -56,7 +59,11 @@ async function probeInner(): Promise<ProviderResult> {
       ok: false,
       stale: false,
       fetchedAt,
-      error: { kind: "no-credentials", message: "no OPENCODE_API_KEY and no opencode.key in ~/.local/share/opencode/auth.json", hint: "run subt init or opencode auth login" },
+      error: {
+        kind: "no-credentials",
+        message: "no OPENCODE_API_KEY and no opencode.key in ~/.local/share/opencode/auth.json",
+        hint: "run subtrk init or opencode auth login",
+      },
     };
   }
   void registerSecret(key);
@@ -67,14 +74,15 @@ const provider: ProviderModule = {
   id: "opencode",
   ttlMs: 0,
   probe(): Promise<ProviderResult> {
-    return probeInner().catch((e: unknown): ProviderResult =>
-      ({
+    return probeInner().catch(
+      (e: unknown): ProviderResult => ({
         id: "opencode",
         ok: false,
         stale: false,
         fetchedAt: new Date().toISOString(),
         error: { kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` },
-      }));
+      }),
+    );
   },
 };
 export default provider;

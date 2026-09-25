@@ -1,16 +1,16 @@
-// init.ts — `subt init`: one-time interactive setup (spec §subt init).
+// init.ts — `subtrk init`: one-time interactive setup (spec §subtrk init).
 // Checks all six providers, offers installs/logins, writes new secrets to
-// ~/.subt/env (mode 0600 on POSIX). Secrets are never echoed.
+// ~/.subtrk/env (mode 0600 on POSIX). Secrets are never echoed.
 import { execFile, spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { getSecret, registerSecret, scrub, SUBT_DIR } from "./core.ts";
+import { getSecret, registerSecret, SUBTRK_DIR, scrub } from "./core.ts";
 import { claudeAuth } from "./providers/claude.ts";
 
 export interface InitOpts {
-  subtDir?: string;
+  subtrkDir?: string;
 }
 
 // ---------- prompts ----------
@@ -144,7 +144,10 @@ function safeArg(v: string): boolean {
 // shim, so the call routes through `cmd.exe /d /s /c` — still argv-driven:
 // Node quotes each element into the child command line, and user-typed secrets
 // pass safeArg first, so no command string is ever assembled here.
-function runBl(args: string[], opts: { stdio?: "inherit" } = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+function runBl(
+  args: string[],
+  opts: { stdio?: "inherit" } = {},
+): Promise<{ code: number; stdout: string; stderr: string }> {
   const win = process.platform === "win32";
   const file = win ? "cmd.exe" : "bl";
   const argv = win ? ["/d", "/s", "/c", "bl", ...args] : args;
@@ -180,11 +183,18 @@ export function classifyBlVerify(
       /"items"\s*:\s*\[\s*\]/.test(trimmed) ||
       /"data"\s*:\s*\{\s*\}/.test(trimmed);
     if (looksEmpty) {
-      return { ok: false, message: "console login works but returned no plan data — wrong console site or account? (bl auth login --console)" };
+      return {
+        ok: false,
+        message:
+          "console login works but returned no plan data — wrong console site or account? (bl auth login --console)",
+      };
     }
     return { ok: true };
   }
-  const lines = stderr.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "");
+  const lines = stderr
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l !== "");
   const last = lines[lines.length - 1] ?? `bl usage token-plan exited with code ${exitCode}`;
   return { ok: false, message: scrubFn(last).slice(-200) };
 }
@@ -193,7 +203,9 @@ async function askConsoleSite(): Promise<"international" | "domestic"> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     const a = (
-      await rl.question("alibaba — Console site? [1] international (modelstudio.alibabacloud.com) [2] domestic CN (bailian.console.aliyun.com) [1] ")
+      await rl.question(
+        "alibaba — Console site? [1] international (modelstudio.alibabacloud.com) [2] domestic CN (bailian.console.aliyun.com) [1] ",
+      )
     ).trim();
     return a === "2" ? "domestic" : "international";
   } finally {
@@ -234,22 +246,26 @@ async function fetchGoogleClientConstants(): Promise<Record<string, string> | nu
       clearTimeout(t);
     }
   };
-  const geminiSrc = await get("https://raw.githubusercontent.com/google-gemini/gemini-cli/main/packages/core/src/code_assist/oauth2.ts");
+  const geminiSrc = await get(
+    "https://raw.githubusercontent.com/google-gemini/gemini-cli/main/packages/core/src/code_assist/oauth2.ts",
+  );
   const id = geminiSrc.match(/\d{6,}-[a-z0-9.-]+\.apps\.googleusercontent\.com/)?.[0];
   const secret = geminiSrc.match(/GOCSPX-[A-Za-z0-9_-]+/)?.[0];
-  const agySrc = await get("https://raw.githubusercontent.com/georgewhewell/quota-exporter/HEAD/src/llm_quota_exporter/providers/gemini.py");
+  const agySrc = await get(
+    "https://raw.githubusercontent.com/georgewhewell/quota-exporter/HEAD/src/llm_quota_exporter/providers/gemini.py",
+  );
   const agyId = agySrc.match(/\d{6,}-[a-z0-9.-]+\.apps\.googleusercontent\.com/)?.[0];
   if (!id || !secret || !agyId || agyId === id) return null;
   return { GOOGLE_CLIENT_ID: id, GOOGLE_CLIENT_SECRET: secret, ANTIGRAVITY_CLIENT_ID: agyId };
 }
 
 export async function runInit(opts: InitOpts = {}): Promise<void> {
-  const subtDir = opts.subtDir ?? SUBT_DIR;
-  const envPath = join(subtDir, "env");
-  mkdirSync(subtDir, { recursive: true });
+  const subtrkDir = opts.subtrkDir ?? SUBTRK_DIR;
+  const envPath = join(subtrkDir, "env");
+  mkdirSync(subtrkDir, { recursive: true });
   const missing: string[] = [];
 
-  console.log("subt init — checking providers\n");
+  console.log("subtrk init — checking providers\n");
 
   // 1. Claude: token present AND (unexpired OR refreshable).
   const cred = readJson(join(homedir(), ".claude", ".credentials.json"));
@@ -257,20 +273,20 @@ export async function runInit(opts: InitOpts = {}): Promise<void> {
   if (claude.ok) {
     console.log("[ok]      claude — token present, unexpired");
   } else if (claude.refreshToken) {
-    console.log("[ok]      claude — token expired, subt will self-refresh on next status");
+    console.log("[ok]      claude — token expired, subtrk will self-refresh on next status");
   } else {
     missing.push("claude — run `claude /login`");
     console.log("[missing] claude — no readable unexpired token in ~/.claude/.credentials.json");
   }
 
   // 2. GLM: ZCode config key present.
-  const zcfg = readJson(join(homedir(), ".zcode", "cli", "config.json")) as
-    | { provider?: { zai?: { apiKey?: unknown } } }
-    | null;
+  const zcfg = readJson(join(homedir(), ".zcode", "cli", "config.json")) as {
+    provider?: { zai?: { apiKey?: unknown } };
+  } | null;
   if (typeof zcfg?.provider?.zai?.apiKey === "string" && zcfg.provider.zai.apiKey.length > 0) {
     console.log("[ok]      glm — ZCode config key present");
   } else {
-    missing.push("glm — log in via ZCode, then re-run subt init");
+    missing.push("glm — log in via ZCode, then re-run subtrk init");
     console.log("[missing] glm — no provider.zai.apiKey in ~/.zcode/cli/config.json");
   }
 
@@ -289,12 +305,21 @@ export async function runInit(opts: InitOpts = {}): Promise<void> {
     if (key && safeArg(key)) {
       registerSecret(key);
       const r = await runBl(["auth", "login", "--api-key", key]);
-      console.log(r.code === 0 ? "[ok]      alibaba — API key login succeeded" : "[failed]  alibaba — API key login failed (bl exited non-zero)");
+      console.log(
+        r.code === 0
+          ? "[ok]      alibaba — API key login succeeded"
+          : "[failed]  alibaba — API key login failed (bl exited non-zero)",
+      );
     } else if (key) {
-      console.log("[failed]  alibaba — API key login skipped: key contains characters outside the expected sk-sp key set");
+      console.log(
+        "[failed]  alibaba — API key login skipped: key contains characters outside the expected sk-sp key set",
+      );
     }
     const site = await askConsoleSite();
-    const consoleArgs = site === "international" ? ["auth", "login", "--console", "--console-site", "international"] : ["auth", "login", "--console"];
+    const consoleArgs =
+      site === "international"
+        ? ["auth", "login", "--console", "--console-site", "international"]
+        : ["auth", "login", "--console"];
     const consoleRes = await runBl(consoleArgs, { stdio: "inherit" });
     if (consoleRes.code === 0) {
       console.log("[ok]      alibaba — console login succeeded");
@@ -305,28 +330,49 @@ export async function runInit(opts: InitOpts = {}): Promise<void> {
       if (akId && akSecret && safeArg(akId) && safeArg(akSecret)) {
         registerSecret(akId);
         registerSecret(akSecret);
-        const r = await runBl(["auth", "login", "--open-api", "--access-key-id", akId, "--access-key-secret", akSecret]);
-        console.log(r.code === 0 ? "[ok]      alibaba — access-key login succeeded" : "[failed]  alibaba — access-key login failed (bl exited non-zero)");
+        const r = await runBl([
+          "auth",
+          "login",
+          "--open-api",
+          "--access-key-id",
+          akId,
+          "--access-key-secret",
+          akSecret,
+        ]);
+        console.log(
+          r.code === 0
+            ? "[ok]      alibaba — access-key login succeeded"
+            : "[failed]  alibaba — access-key login failed (bl exited non-zero)",
+        );
       } else if (akId && akSecret) {
-        console.log("[failed]  alibaba — access-key login skipped: value contains characters outside the expected key set");
+        console.log(
+          "[failed]  alibaba — access-key login skipped: value contains characters outside the expected key set",
+        );
       }
     }
     // Verify via the raw gateway passthrough (bl usage token-plan drops the
     // monthly fields — formatter bug as of bl 2.0.1).
     const verify = await runBl([
-      "console", "call",
-      "--api", "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage",
-      "--data", "{}", "--output", "json",
+      "console",
+      "call",
+      "--api",
+      "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage",
+      "--data",
+      "{}",
+      "--output",
+      "json",
     ]);
     const verdict = classifyBlVerify(verify.code, verify.stderr, scrub, verify.stdout);
     if (verdict.ok) {
       console.log("[ok]      alibaba — logged in, usage readable");
     } else {
-      missing.push("alibaba — log in: `bl auth login --api-key <sk-sp-key>` or `bl auth login --console`, then re-run subt init");
+      missing.push(
+        "alibaba — log in: `bl auth login --api-key <sk-sp-key>` or `bl auth login --console`, then re-run subtrk init",
+      );
       console.log(`[failed]  alibaba — ${verdict.message}`);
     }
   } else {
-    missing.push("alibaba — npm i -g bailian-cli, then subt init");
+    missing.push("alibaba — npm i -g bailian-cli, then subtrk init");
     console.log("[missing] alibaba — bl not installed");
   }
 
@@ -341,46 +387,54 @@ export async function runInit(opts: InitOpts = {}): Promise<void> {
   } else {
     missing.push("google — install agy and launch it once to log in");
     console.log("[missing] google — no credential found");
-    console.log("          install agy: irm https://antigravity.google/cli/install.ps1 | iex — then launch it once to log in (subt reads its Credential Manager token directly)");
+    console.log(
+      "          install agy: irm https://antigravity.google/cli/install.ps1 | iex — then launch it once to log in (subtrk reads its Credential Manager token directly)",
+    );
   }
   // Legacy gemini/antigravity token refresh needs the public OAuth client
-  // constants; they live in ~/.subt/env (not in the repo). Only relevant when a
+  // constants; they live in ~/.subtrk/env (not in the repo). Only relevant when a
   // legacy file credential exists — the agy keyring path never refreshes.
   if (googleFile) {
-    const have = { id: getSecret("GOOGLE_CLIENT_ID", envPath), secret: getSecret("GOOGLE_CLIENT_SECRET", envPath), agyId: getSecret("ANTIGRAVITY_CLIENT_ID", envPath) };
+    const have = {
+      id: getSecret("GOOGLE_CLIENT_ID", envPath),
+      secret: getSecret("GOOGLE_CLIENT_SECRET", envPath),
+      agyId: getSecret("ANTIGRAVITY_CLIENT_ID", envPath),
+    };
     if (!have.id || !have.secret || !have.agyId) {
       const fetched = await fetchGoogleClientConstants();
       if (fetched) {
         updateEnvFile(envPath, fetched);
-        console.log("[ok]      google — OAuth client constants fetched from upstream into ~/.subt/env");
+        console.log("[ok]      google — OAuth client constants fetched from upstream into ~/.subtrk/env");
       } else {
         console.log("[note]    google — could not fetch OAuth client constants");
-        console.log("          legacy token refresh needs GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ANTIGRAVITY_CLIENT_ID in ~/.subt/env");
+        console.log(
+          "          legacy token refresh needs GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ANTIGRAVITY_CLIENT_ID in ~/.subtrk/env",
+        );
         console.log("          (public values — see gemini-cli's packages/core/src/code_assist/oauth2.ts)");
       }
     }
   }
 
-  // 5. opencode: key in env/~/.subt/env, or auth.json.
+  // 5. opencode: key in env/~/.subtrk/env, or auth.json.
   const ocKey = getSecret("OPENCODE_API_KEY", envPath);
   if (ocKey || existsSync(join(homedir(), ".local", "share", "opencode", "auth.json"))) {
     console.log("[ok]      opencode — key or auth.json present");
-  } else if (await askYesNo("opencode — no key found. Store OPENCODE_API_KEY in ~/.subt/env?")) {
+  } else if (await askYesNo("opencode — no key found. Store OPENCODE_API_KEY in ~/.subtrk/env?")) {
     const key = await askHidden("OPENCODE_API_KEY (hidden): ");
     if (key) {
       registerSecret(key);
       updateEnvFile(envPath, { OPENCODE_API_KEY: key });
-      console.log("[ok]      opencode — key stored in ~/.subt/env");
+      console.log("[ok]      opencode — key stored in ~/.subtrk/env");
     } else {
-      missing.push("opencode — no key entered (run subt init or opencode auth login)");
+      missing.push("opencode — no key entered (run subtrk init or opencode auth login)");
       console.log("[missing] opencode — no key entered");
     }
   } else {
-    missing.push("opencode — run subt init or opencode auth login");
+    missing.push("opencode — run subtrk init or opencode auth login");
     console.log("[missing] opencode — no key or auth.json");
   }
 
-  // 6. OpenRouter: hidden-input prompts, written to ~/.subt/env.
+  // 6. OpenRouter: hidden-input prompts, written to ~/.subtrk/env.
   const updates: Record<string, string> = {};
   if (getSecret("OPENROUTER_API_KEY", envPath)) {
     console.log("[ok]      openrouter — OPENROUTER_API_KEY already stored");
@@ -389,9 +443,9 @@ export async function runInit(opts: InitOpts = {}): Promise<void> {
     if (key) {
       registerSecret(key);
       updates.OPENROUTER_API_KEY = key;
-      console.log("[ok]      openrouter — OPENROUTER_API_KEY stored in ~/.subt/env");
+      console.log("[ok]      openrouter — OPENROUTER_API_KEY stored in ~/.subtrk/env");
     } else {
-      missing.push("openrouter — run subt init to store OPENROUTER_API_KEY");
+      missing.push("openrouter — run subtrk init to store OPENROUTER_API_KEY");
       console.log("[missing] openrouter — no key entered");
     }
   }
@@ -400,7 +454,7 @@ export async function runInit(opts: InitOpts = {}): Promise<void> {
     if (mgmt) {
       registerSecret(mgmt);
       updates.OPENROUTER_MANAGEMENT_KEY = mgmt;
-      console.log("[ok]      openrouter — OPENROUTER_MANAGEMENT_KEY stored in ~/.subt/env");
+      console.log("[ok]      openrouter — OPENROUTER_MANAGEMENT_KEY stored in ~/.subtrk/env");
     }
   }
   if (Object.keys(updates).length > 0) updateEnvFile(envPath, updates);

@@ -1,18 +1,19 @@
-// serve.ts — `subt serve` (M2): the localhost web console backend.
+// serve.ts — `subtrk serve` (M2): the localhost web console backend.
 // Loopback-only HTTP: the browser shell (src/console.html) is the one static
-// route; /api/status replays `subt status --json` behind a per-run Bearer
+// route; /api/status replays `subtrk status --json` behind a per-run Bearer
 // token. No CORS headers, ever — same-origin plus the custom Authorization
 // header (preflight) is the cross-site defense. Probe work inherits core's
 // 10s per-provider budget, so every request is bounded.
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
-import { collectStatus, errorMessage, scrubValue, type ProviderModule } from "./core.ts";
+import { collectStatus, errorMessage, type ProviderModule, scrubValue } from "./core.ts";
 
 export interface ServeDeps {
   providers?: ProviderModule[]; // stub registry (tests)
-  subtDir?: string; // override ~/.subt (tests)
+  subtrkDir?: string; // override ~/.subtrk (tests)
   consoleHtmlPath?: string; // shell served at / (default: src/console.html next to this module)
   port?: number; // default 0 — random ephemeral port
 }
@@ -64,9 +65,7 @@ export async function startConsole(deps: ServeDeps = {}): Promise<ServeHandle> {
   const token = randomBytes(32).toString("hex"); // per run, memory only
   let shell: Buffer | null = null;
   try {
-    shell = readFileSync(
-      deps.consoleHtmlPath ?? fileURLToPath(new URL("./console.html", import.meta.url)),
-    );
+    shell = readFileSync(deps.consoleHtmlPath ?? fileURLToPath(new URL("./console.html", import.meta.url)));
   } catch {
     shell = null; // / answers 404 text until the shell file exists
   }
@@ -95,10 +94,10 @@ export async function startConsole(deps: ServeDeps = {}): Promise<ServeHandle> {
           respond(res, 401, JSON.stringify({ error: "unauthorized" }));
           return;
         }
-        void collectStatus({ subtDir: deps.subtDir, providers: deps.providers }).then(
+        void collectStatus({ subtrkDir: deps.subtrkDir, providers: deps.providers }).then(
           (c) => respond(res, 200, JSON.stringify(scrubValue(c.out))),
           (err: unknown) => {
-            console.error(`subt: ${errorMessage(err)}`);
+            console.error(`subtrk: ${errorMessage(err)}`);
             respond(res, 500, JSON.stringify({ error: "status unavailable" }));
           },
         );
@@ -106,7 +105,7 @@ export async function startConsole(deps: ServeDeps = {}): Promise<ServeHandle> {
       }
       respond(res, 404, JSON.stringify({ error: "not found" }));
     } catch (err: unknown) {
-      console.error(`subt: ${errorMessage(err)}`);
+      console.error(`subtrk: ${errorMessage(err)}`);
       respond(res, 500, JSON.stringify({ error: "internal error" }));
     }
   });

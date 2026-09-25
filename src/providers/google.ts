@@ -8,7 +8,7 @@
 // Quota: POST /v1internal:retrieveUserQuotaSummary with an EMPTY {} body (the request
 // proto has no other fields; unknown fields 400). No loadCodeAssist step. agy owns
 // token refresh: on 401 the credential is re-read once (agy refreshes the keyring blob
-// in place while running) and the call retried once — subt never refreshes keyring tokens.
+// in place while running) and the call retried once — subtrk never refreshes keyring tokens.
 
 import { execFile } from "node:child_process";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -25,9 +25,9 @@ const PRIMARY_HOST = "https://cloudcode-pa.googleapis.com";
 const FALLBACK_HOST = "https://daily-cloudcode-pa.googleapis.com";
 const QUOTA_PATH = "/v1internal:retrieveUserQuotaSummary";
 
-// The OAuth client constants for legacy file-lineage refresh live in ~/.subt/env
+// The OAuth client constants for legacy file-lineage refresh live in ~/.subtrk/env
 // (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ANTIGRAVITY_CLIENT_ID). They are
-// PUBLIC installed-app values — `subt init` fetches them from upstream sources
+// PUBLIC installed-app values — `subtrk init` fetches them from upstream sources
 // — kept out of this repo so secret scanners stay quiet.
 async function envClientValue(name: string): Promise<string | undefined> {
   try {
@@ -41,11 +41,11 @@ async function envClientValue(name: string): Promise<string | undefined> {
 // FIXED literal — nothing is ever interpolated into it. CredReadW (CharSet Unicode)
 // reads the generic credential "gemini:antigravity" (type 1); CredFree releases the
 // buffer; the CredentialBlob bytes are copied verbatim to stdout (UTF-8 JSON).
-const AGY_KEYRING_PS_SCRIPT = `$src = 'using System;using System.Runtime.InteropServices;public static class SubtCredRead { [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct CREDENTIAL { public int Flags; public int Type; public string TargetName; public string Comment; public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten; public int CredentialBlobSize; public IntPtr CredentialBlob; public int Persist; public int AttributeCount; public IntPtr Attributes; public string TargetAlias; public string UserName; } [DllImport("advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode)] public static extern bool CredRead(string target, int type, int flags, out IntPtr credPtr); [DllImport("advapi32.dll")] public static extern void CredFree(IntPtr cred); }';
+const AGY_KEYRING_PS_SCRIPT = `$src = 'using System;using System.Runtime.InteropServices;public static class SubtrkCredRead { [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct CREDENTIAL { public int Flags; public int Type; public string TargetName; public string Comment; public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten; public int CredentialBlobSize; public IntPtr CredentialBlob; public int Persist; public int AttributeCount; public IntPtr Attributes; public string TargetAlias; public string UserName; } [DllImport("advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode)] public static extern bool CredRead(string target, int type, int flags, out IntPtr credPtr); [DllImport("advapi32.dll")] public static extern void CredFree(IntPtr cred); }';
 Add-Type -TypeDefinition $src;
 $p = [IntPtr]::Zero;
-if (-not [SubtCredRead]::CredRead('gemini:antigravity', 1, 0, [ref]$p)) { exit 1 }
-try { $c = [Runtime.InteropServices.Marshal]::PtrToStructure($p, [type][SubtCredRead+CREDENTIAL]); $n = $c.CredentialBlobSize; $b = New-Object byte[] $n; [Runtime.InteropServices.Marshal]::Copy($c.CredentialBlob, $b, 0, $n); $s = [Console]::OpenStandardOutput(); $s.Write($b, 0, $n); $s.Flush() } finally { [SubtCredRead]::CredFree($p) }`;
+if (-not [SubtrkCredRead]::CredRead('gemini:antigravity', 1, 0, [ref]$p)) { exit 1 }
+try { $c = [Runtime.InteropServices.Marshal]::PtrToStructure($p, [type][SubtrkCredRead+CREDENTIAL]); $n = $c.CredentialBlobSize; $b = New-Object byte[] $n; [Runtime.InteropServices.Marshal]::Copy($c.CredentialBlob, $b, 0, $n); $s = [Console]::OpenStandardOutput(); $s.Write($b, 0, $n); $s.Flush() } finally { [SubtrkCredRead]::CredFree($p) }`;
 
 export interface GoogleCreds {
   accessToken: string;
@@ -95,7 +95,11 @@ export function parseAntigravityTokenFile(text: string): GoogleCreds | null {
   if (trimmed === "") return null;
   try {
     const obj: unknown = JSON.parse(trimmed);
-    if (typeof obj === "object" && obj !== null && typeof (obj as { access_token?: unknown }).access_token === "string") {
+    if (
+      typeof obj === "object" &&
+      obj !== null &&
+      typeof (obj as { access_token?: unknown }).access_token === "string"
+    ) {
       const creds = parseGeminiCreds(obj);
       return creds ? { ...creds, lineage: "antigravity" } : null;
     }
@@ -113,7 +117,10 @@ export function googleExpired(creds: GoogleCreds, nowMs: number): boolean {
 
 // Pure: "Gemini Models" -> "gemini-models".
 export function slugify(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 // Pure: "gemini-weekly"-style bucketId -> window kind when the `window` field is absent.
@@ -179,17 +186,34 @@ async function fetchText(url: string, init: RequestInit): Promise<FetchOutcome> 
       return { ok: false, status: res.status, error: { kind: "parse-failure", message: "response exceeds 1MB cap" } };
     }
     if (res.status === 429) {
-      return { ok: false, status: res.status, text, error: { kind: "rate-limited", message: "rate limited (429)", retryAfterMs: retryAfterMs(res.headers.get("retry-after")) } };
+      return {
+        ok: false,
+        status: res.status,
+        text,
+        error: {
+          kind: "rate-limited",
+          message: "rate limited (429)",
+          retryAfterMs: retryAfterMs(res.headers.get("retry-after")),
+        },
+      };
     }
     if (!res.ok) {
-      return { ok: false, status: res.status, text, error: { kind: "http-error", message: `HTTP ${res.status}`, status: res.status } };
+      return {
+        ok: false,
+        status: res.status,
+        text,
+        error: { kind: "http-error", message: `HTTP ${res.status}`, status: res.status },
+      };
     }
     return { ok: true, status: res.status, text };
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
       return { ok: false, error: { kind: "timeout", message: `request timed out after ${TIMEOUT_MS / 1000}s` } };
     }
-    return { ok: false, error: { kind: "http-error", message: `network error: ${e instanceof Error ? e.message : "unknown"}` } };
+    return {
+      ok: false,
+      error: { kind: "http-error", message: `network error: ${e instanceof Error ? e.message : "unknown"}` },
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -204,7 +228,11 @@ function postJson(url: string, body: unknown, token: string): Promise<FetchOutco
 }
 
 function postForm(url: string, params: URLSearchParams): Promise<FetchOutcome> {
-  return fetchText(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: params });
+  return fetchText(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params,
+  });
 }
 
 async function registerSecret(secret: string): Promise<void> {
@@ -287,7 +315,7 @@ function writeBackCreds(path: string, raw: Record<string, unknown>, accessToken:
   try {
     raw.access_token = accessToken;
     raw.expiry_date = expiresAtMs;
-    const tmp = `${path}.subt-tmp`;
+    const tmp = `${path}.subtrk-tmp`;
     writeFileSync(tmp, JSON.stringify(raw), "utf8");
     renameSync(tmp, path);
   } catch {
@@ -303,7 +331,7 @@ async function refreshAccessToken(creds: GoogleCreds): Promise<RefreshOutcome> {
     error: {
       kind: "no-credentials",
       message: `${what} not configured`,
-      hint: "run subt init (fetches the public values) or set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in ~/.subt/env",
+      hint: "run subtrk init (fetches the public values) or set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in ~/.subtrk/env",
     },
   });
   const clientId = await envClientValue(creds.lineage === "gemini" ? "GOOGLE_CLIENT_ID" : "ANTIGRAVITY_CLIENT_ID");
@@ -329,7 +357,14 @@ async function refreshAccessToken(creds: GoogleCreds): Promise<RefreshOutcome> {
       }
     }
     if (code === "invalid_client") {
-      return { ok: false, error: { kind: "expired-token", message: "token refresh rejected (invalid_client)", hint: "log in again with agy" } };
+      return {
+        ok: false,
+        error: {
+          kind: "expired-token",
+          message: "token refresh rejected (invalid_client)",
+          hint: "log in again with agy",
+        },
+      };
     }
     return { ok: false, error: out.error };
   }
@@ -341,7 +376,12 @@ async function refreshAccessToken(creds: GoogleCreds): Promise<RefreshOutcome> {
   }
   const accessToken = (body as { access_token?: unknown }).access_token;
   const expiresIn = (body as { expires_in?: unknown }).expires_in;
-  if (typeof accessToken !== "string" || accessToken === "" || typeof expiresIn !== "number" || !Number.isFinite(expiresIn)) {
+  if (
+    typeof accessToken !== "string" ||
+    accessToken === "" ||
+    typeof expiresIn !== "number" ||
+    !Number.isFinite(expiresIn)
+  ) {
     return { ok: false, error: { kind: "parse-failure", message: "refresh response missing access_token/expires_in" } };
   }
   return { ok: true, accessToken, expiresAtMs: Date.now() + expiresIn * 1000 };
@@ -355,11 +395,14 @@ async function probeInner(): Promise<ProviderResult> {
   const fetchedAt = new Date().toISOString();
   const found = await discoverCreds();
   if (!found) {
-    return fail({
-      kind: "no-credentials",
-      message: "no Gemini/Antigravity credential found (keyring and file lineages)",
-      hint: "install agy (irm https://antigravity.google/cli/install.ps1 | iex) and log in once",
-    }, fetchedAt);
+    return fail(
+      {
+        kind: "no-credentials",
+        message: "no Gemini/Antigravity credential found (keyring and file lineages)",
+        hint: "install agy (irm https://antigravity.google/cli/install.ps1 | iex) and log in once",
+      },
+      fetchedAt,
+    );
   }
   await registerCreds(found.creds);
 
@@ -369,7 +412,14 @@ async function probeInner(): Promise<ProviderResult> {
   // expiry check + refresh (write-back for the gemini lineage only).
   if (found.creds.lineage !== "agy-keyring" && googleExpired(found.creds, Date.now())) {
     if (!found.creds.refreshToken) {
-      return fail({ kind: "expired-token", message: "access token expired and no refresh_token in the credential file", hint: "log in again with agy" }, fetchedAt);
+      return fail(
+        {
+          kind: "expired-token",
+          message: "access token expired and no refresh_token in the credential file",
+          hint: "log in again with agy",
+        },
+        fetchedAt,
+      );
     }
     const refreshed = await refreshAccessToken(found.creds);
     if (!refreshed.ok) return fail(refreshed.error, fetchedAt);
@@ -389,17 +439,27 @@ async function probeInner(): Promise<ProviderResult> {
     }
     out = await postJson(`${PRIMARY_HOST}${QUOTA_PATH}`, {}, token);
     if (!out.ok && out.status === 401) {
-      return fail({ kind: "expired-token", message: "token rejected (401, also after one credential re-read)", hint: "launch agy once so it refreshes its token, then re-run" }, fetchedAt);
+      return fail(
+        {
+          kind: "expired-token",
+          message: "token rejected (401, also after one credential re-read)",
+          hint: "launch agy once so it refreshes its token, then re-run",
+        },
+        fetchedAt,
+      );
     }
   }
   if (!out.ok && (out.status === 403 || out.status === 404)) {
     const retry = await postJson(`${FALLBACK_HOST}${QUOTA_PATH}`, {}, token);
     if (!retry.ok) {
-      return fail({
-        kind: "not-readable-remotely",
-        message: `quota summary failed on both hosts (HTTP ${out.status} then ${retry.status ?? retry.error.kind})`,
-        hint: "run agy /usage",
-      }, fetchedAt);
+      return fail(
+        {
+          kind: "not-readable-remotely",
+          message: `quota summary failed on both hosts (HTTP ${out.status} then ${retry.status ?? retry.error.kind})`,
+          hint: "run agy /usage",
+        },
+        fetchedAt,
+      );
     }
     out = retry;
   }
@@ -414,7 +474,10 @@ async function probeInner(): Promise<ProviderResult> {
   const windows = parseGoogleSummary(summary);
   if (windows === null) return fail({ kind: "parse-failure", message: "quota summary shape unrecognized" }, fetchedAt);
   if (windows.length === 0) {
-    return fail({ kind: "not-readable-remotely", message: "quota groups empty or free-tier shaped", hint: "run agy /usage" }, fetchedAt);
+    return fail(
+      { kind: "not-readable-remotely", message: "quota groups empty or free-tier shaped", hint: "run agy /usage" },
+      fetchedAt,
+    );
   }
   return { id: "google", ok: true, stale: false, fetchedAt, windows };
 }
@@ -423,8 +486,13 @@ const provider: ProviderModule = {
   id: "google",
   ttlMs: 60_000,
   probe(): Promise<ProviderResult> {
-    return probeInner().catch((e: unknown): ProviderResult =>
-      fail({ kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` }, new Date().toISOString()));
+    return probeInner().catch(
+      (e: unknown): ProviderResult =>
+        fail(
+          { kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` },
+          new Date().toISOString(),
+        ),
+    );
   },
 };
 export default provider;

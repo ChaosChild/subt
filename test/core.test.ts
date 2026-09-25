@@ -14,29 +14,23 @@ import {
   fetchProvider,
   getSecret,
   loadConfig,
+  type ProviderModule,
+  type ProviderResult,
   parseEnvText,
   registerSecret,
   scrub,
   scrubValue,
-  type ProviderModule,
-  type ProviderResult,
 } from "../src/core.ts";
 
 function tempDir(): string {
-  return mkdtempSync(join(tmpdir(), "subt-core-test-"));
+  return mkdtempSync(join(tmpdir(), "subtrk-core-test-"));
 }
 
 function cleanup(dir: string): () => void {
   return () => rmSync(dir, { recursive: true, force: true });
 }
 
-function seedCache(
-  cachePath: string,
-  id: string,
-  data: ProviderResult,
-  ageMs: number,
-  ttlMs = 60_000,
-): void {
+function seedCache(cachePath: string, id: string, data: ProviderResult, ageMs: number, ttlMs = 60_000): void {
   mkdirSync(join(cachePath, ".."), { recursive: true });
   writeFileSync(
     cachePath,
@@ -86,19 +80,19 @@ describe("env parser + getSecret precedence", () => {
     t.after(cleanup(dir));
     clearSecrets();
     const envPath = join(dir, "env");
-    writeFileSync(envPath, "SUBT_TEST_KEY=from-file\nSUBT_TEST_QUOTED=\"from-quotes\"\n");
-    delete process.env.SUBT_TEST_KEY;
+    writeFileSync(envPath, 'SUBTRK_TEST_KEY=from-file\nSUBTRK_TEST_QUOTED="from-quotes"\n');
+    delete process.env.SUBTRK_TEST_KEY;
     t.after(() => {
-      delete process.env.SUBT_TEST_KEY;
+      delete process.env.SUBTRK_TEST_KEY;
       clearSecrets();
     });
-    assert.equal(getSecret("SUBT_TEST_KEY", envPath), "from-file");
+    assert.equal(getSecret("SUBTRK_TEST_KEY", envPath), "from-file");
     assert.equal(scrub("x from-file y"), "x *** y");
-    process.env.SUBT_TEST_KEY = "from-env";
-    assert.equal(getSecret("SUBT_TEST_KEY", envPath), "from-env");
+    process.env.SUBTRK_TEST_KEY = "from-env";
+    assert.equal(getSecret("SUBTRK_TEST_KEY", envPath), "from-env");
     assert.equal(scrub("x from-env y"), "x *** y");
-    assert.equal(getSecret("SUBT_TEST_QUOTED", envPath), "from-quotes");
-    assert.equal(getSecret("SUBT_TEST_ABSENT", envPath), undefined);
+    assert.equal(getSecret("SUBTRK_TEST_QUOTED", envPath), "from-quotes");
+    assert.equal(getSecret("SUBTRK_TEST_ABSENT", envPath), undefined);
   });
 });
 
@@ -215,7 +209,10 @@ describe("cache: fresh / stale / probe math", () => {
     const dir = tempDir();
     t.after(cleanup(dir));
     const cachePath = join(dir, "cache.json");
-    writeFileSync(cachePath, JSON.stringify({ schemaVersion: 2, glm: { data: hit("glm"), fetchedAt: Date.now(), ttlMs: 60_000 } }));
+    writeFileSync(
+      cachePath,
+      JSON.stringify({ schemaVersion: 2, glm: { data: hit("glm"), fetchedAt: Date.now(), ttlMs: 60_000 } }),
+    );
     const counter = { n: 0 };
     await fetchProvider(countingModule("glm", hit("glm"), counter), { cachePath });
     assert.equal(counter.n, 1, "mismatched schema must be a miss");
@@ -343,7 +340,7 @@ describe("scheduling math", () => {
     const resetA = now + 5 * 3600_000; // later reset
     const resetB = now + 60_000; // earlier reset
     const ttl = 300_000;
-    const entries = [
+    const entries: { result: ProviderResult; ttlMs: number }[] = [
       {
         result: {
           id: "claude",
@@ -400,7 +397,13 @@ describe("scheduling math", () => {
   });
 
   it("returns null when no ok provider has windows", () => {
-    assert.equal(computeNextEvent([{ result: { id: "glm", ok: false, stale: false, fetchedAt: new Date(now).toISOString() }, ttlMs: 60_000 }], now), null);
+    assert.equal(
+      computeNextEvent(
+        [{ result: { id: "glm", ok: false, stale: false, fetchedAt: new Date(now).toISOString() }, ttlMs: 60_000 }],
+        now,
+      ),
+      null,
+    );
     assert.equal(
       computeNextEvent(
         [{ result: { id: "glm", ok: true, stale: false, fetchedAt: new Date(now).toISOString() }, ttlMs: 60_000 }],

@@ -1,10 +1,10 @@
 // core.ts — types, config, env secrets, redaction, TTL cache, fetch helpers,
-// and scheduling math for subt. Pure logic; every path is a parameter
-// (defaulting to SUBT_DIR) so tests can inject temp dirs.
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+// and scheduling math for subtrk. Pure logic; every path is a parameter
+// (defaulting to SUBTRK_DIR) so tests can inject temp dirs.
+
 import {
   closeSync,
+  existsSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -13,16 +13,12 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
 // ---------- shared contract (docs/spec.md §ProviderResult) ----------
 
-export type ProviderId =
-  | "claude"
-  | "glm"
-  | "alibaba"
-  | "google"
-  | "opencode"
-  | "openrouter";
+export type ProviderId = "claude" | "glm" | "alibaba" | "google" | "opencode" | "openrouter";
 
 export type ErrorKind =
   | "no-credentials"
@@ -93,15 +89,15 @@ export interface StatusOutput {
 
 // ---------- constants ----------
 
-export const SUBT_DIR = join(homedir(), ".subt");
-export const ALL_PROVIDER_IDS: readonly ProviderId[] = [
-  "claude",
-  "glm",
-  "alibaba",
-  "google",
-  "opencode",
-  "openrouter",
-];
+export const SUBTRK_DIR = join(homedir(), ".subtrk");
+// One-time migration from the pre-rename dir so stored keys/cache survive.
+try {
+  const legacy = join(homedir(), ".subt");
+  if (existsSync(legacy) && !existsSync(SUBTRK_DIR)) renameSync(legacy, SUBTRK_DIR);
+} catch {
+  /* best effort — a failure just means re-running `subtrk init` */
+}
+export const ALL_PROVIDER_IDS: readonly ProviderId[] = ["claude", "glm", "alibaba", "google", "opencode", "openrouter"];
 export const PROBE_TIMEOUT_MS = 10_000;
 // --fresh never bypasses these providers' TTL floors (claude's usage endpoint
 // has UA-keyed 429 buckets — spec §Cache TTL table).
@@ -155,8 +151,8 @@ function sleep(ms: number): Promise<void> {
 
 // ---------- config ----------
 
-export function loadConfig(subtDir: string = SUBT_DIR): { enabled: ProviderId[] } {
-  const path = join(subtDir, "config.json");
+export function loadConfig(subtrkDir: string = SUBTRK_DIR): { enabled: ProviderId[] } {
+  const path = join(subtrkDir, "config.json");
   let text: string;
   try {
     text = readFileSync(path, "utf8");
@@ -216,10 +212,7 @@ export function parseEnvText(text: string): Record<string, string> {
     if (eq <= 0) continue;
     const key = line.slice(0, eq).trim();
     let value = line.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
     if (key) out[key] = value;
@@ -227,8 +220,8 @@ export function parseEnvText(text: string): Record<string, string> {
   return out;
 }
 
-// Process env wins, then ~/.subt/env (KEY=VALUE lines, # comments).
-export function getSecret(name: string, envPath: string = join(SUBT_DIR, "env")): string | undefined {
+// Process env wins, then ~/.subtrk/env (KEY=VALUE lines, # comments).
+export function getSecret(name: string, envPath: string = join(SUBTRK_DIR, "env")): string | undefined {
   const fromEnv = process.env[name];
   if (fromEnv) {
     registerSecret(fromEnv);
@@ -437,7 +430,7 @@ async function finishProbe(
 // Cache-or-probe per spec §Cache. ttlMs <= 0 bypasses the cache entirely.
 export async function fetchProvider(p: ProviderModule, opts: FetchOpts = {}): Promise<ProviderResult> {
   if (p.ttlMs <= 0) return runProbe(p, opts);
-  const cachePath = opts.cachePath ?? join(SUBT_DIR, "cache.json");
+  const cachePath = opts.cachePath ?? join(SUBTRK_DIR, "cache.json");
   const lockPath = `${cachePath}.lock`;
   const now = opts.now ?? Date.now();
   const entry = readCacheEntry(cachePath, p.id);
@@ -588,10 +581,10 @@ export function computeRecheckAfter(okTtlsMs: number[], nowMs: number = Date.now
   return new Date(nowMs + clamped).toISOString();
 }
 
-// ---------- status collection (shared by `subt status` and `subt serve`) ----------
+// ---------- status collection (shared by `subtrk status` and `subtrk serve`) ----------
 
 export interface CollectStatusOpts {
-  subtDir?: string; // override ~/.subt (tests)
+  subtrkDir?: string; // override ~/.subtrk (tests)
   providers?: ProviderModule[]; // stub registry (tests); default: real registry, lazily imported
   requested?: readonly string[]; // pre-validated --provider ids
   fresh?: boolean; // bypass cache TTLs once (floors respected)
@@ -600,23 +593,18 @@ export interface CollectStatusOpts {
 export async function collectStatus(
   opts: CollectStatusOpts = {},
 ): Promise<{ out: StatusOutput; ttlById: Map<string, number> }> {
-  const enabled = loadConfig(opts.subtDir).enabled;
+  const enabled = loadConfig(opts.subtrkDir).enabled;
   const registry = opts.providers ?? (await import("./providers/index.ts")).allProviders;
-  const requested =
-    opts.requested !== undefined && opts.requested.length > 0
-      ? new Set<string>(opts.requested)
-      : null;
-  const selected = registry.filter(
-    (m) => enabled.includes(m.id) && (!requested || requested.has(m.id)),
-  );
+  const requested = opts.requested !== undefined && opts.requested.length > 0 ? new Set<string>(opts.requested) : null;
+  const selected = registry.filter((m) => enabled.includes(m.id) && (!requested || requested.has(m.id)));
   if (selected.length === 0) {
-    throw new Error("no providers selected — check ~/.subt/config.json or --provider");
+    throw new Error("no providers selected — check ~/.subtrk/config.json or --provider");
   }
   const fresh = opts.fresh === true;
   if (fresh && selected.some((m) => (FRESH_FLOOR_IDS as readonly string[]).includes(m.id))) {
     console.error("claude keeps its 300s floor");
   }
-  const cachePath = join(opts.subtDir ?? SUBT_DIR, "cache.json");
+  const cachePath = join(opts.subtrkDir ?? SUBTRK_DIR, "cache.json");
   const nowMs = Date.now();
   const settled = await Promise.allSettled(
     selected.map((m) =>

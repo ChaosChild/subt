@@ -2,18 +2,23 @@
 // response bodies and credential shapes must never surface in any parsed result
 // or constructed error path. Pure checks — no core dependency, no network.
 
-import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-
+import {
+  deriveCredits,
+  extractJson,
+  parseSubscription,
+  parseTokenPlanUsage,
+  stderrMessage,
+} from "../src/providers/alibaba.ts";
 import { claudeAuth, parseClaudeUsage } from "../src/providers/claude.ts";
 import { parseGlmQuota } from "../src/providers/glm.ts";
-import { deriveCredits, extractJson, parseSubscription, parseTokenPlanUsage, stderrMessage } from "../src/providers/alibaba.ts";
 import { parseAntigravityTokenFile, parseGeminiCreds, parseGoogleSummary } from "../src/providers/google.ts";
 import { extractOpencodeKey } from "../src/providers/opencode.ts";
 import { parseOpenrouterCredits, parseOpenrouterKey } from "../src/providers/openrouter.ts";
 
-const SECRET = "FAKE-SECRET-sk-subt-redaction-fixture-9f2c";
+const SECRET = "FAKE-SECRET-sk-subtrk-redaction-fixture-9f2c";
 
 function fixture(name: string): unknown {
   return JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"));
@@ -96,7 +101,10 @@ test("claude error paths built from a token-bearing credentials object never emb
       fetchedAt: new Date(now).toISOString(),
       error: auth.error,
     };
-    assert.ok(!json(result).includes(SECRET), `error result leaked the secret for case ${JSON.stringify(Object.keys(fileObj))}`);
+    assert.ok(
+      !json(result).includes(SECRET),
+      `error result leaked the secret for case ${JSON.stringify(Object.keys(fileObj))}`,
+    );
   }
 });
 
@@ -118,7 +126,12 @@ test("google credential parsing extracts exactly the known fields (bare token st
   const creds = parseGeminiCreds({ access_token: SECRET, refresh_token: `${SECRET}-r`, expiry_date: 1 });
   assert.ok(creds);
   assert.equal(creds.accessToken, SECRET); // extraction is exact, nothing extra
-  assert.ok(!json({ kind: "expired-token", message: "access token expired and no refresh_token in the credential file" }).includes(SECRET));
+  assert.ok(
+    !json({
+      kind: "expired-token",
+      message: "access token expired and no refresh_token in the credential file",
+    }).includes(SECRET),
+  );
   const bare = parseAntigravityTokenFile(SECRET);
   assert.ok(bare);
   assert.equal(bare.accessToken, SECRET);

@@ -1,14 +1,14 @@
-// serve.test.ts — `subt serve` (M2): auth, host allowlist, routing, CORS
+// serve.test.ts — `subtrk serve` (M2): auth, host allowlist, routing, CORS
 // absence. Every request targets our own listening socket on 127.0.0.1 — no
 // other network. Stub providers ride the same deps seam as the CLI tests.
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
+import { type IncomingHttpHeaders, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { request, type IncomingHttpHeaders } from "node:http";
 import { describe, it } from "node:test";
-import { startConsole, type ServeHandle } from "../src/serve.ts";
 import type { ProviderModule } from "../src/core.ts";
+import { type ServeHandle, startConsole } from "../src/serve.ts";
 
 interface Resp {
   status: number;
@@ -70,7 +70,7 @@ function failingModule(id: ProviderModule["id"]): ProviderModule {
       ok: false,
       stale: false,
       fetchedAt: new Date().toISOString(),
-      error: { kind: "no-credentials", message: "no credential file found", hint: "run subt init" },
+      error: { kind: "no-credentials", message: "no credential file found", hint: "run subtrk init" },
     }),
   };
 }
@@ -87,10 +87,10 @@ async function withServer(
   }
 }
 
-describe("subt serve", () => {
+describe("subtrk serve", () => {
   it("401 without a token", async () => {
-    const subtDir = mkdtempSync(join(tmpdir(), "subt-serve-"));
-    await withServer({ providers: [okModule("claude")], subtDir }, async (h) => {
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    await withServer({ providers: [okModule("claude")], subtrkDir }, async (h) => {
       const r = await get(h.port, "/api/status");
       assert.equal(r.status, 401);
       assert.deepEqual(JSON.parse(r.body), { error: "unauthorized" });
@@ -99,38 +99,35 @@ describe("subt serve", () => {
   });
 
   it("200 with the correct Bearer token — full StatusOutput shape, erroring provider degrades", async () => {
-    const subtDir = mkdtempSync(join(tmpdir(), "subt-serve-"));
-    await withServer(
-      { providers: [okModule("claude"), failingModule("google")], subtDir },
-      async (h) => {
-        const r = await get(h.port, "/api/status", {
-          headers: { authorization: `Bearer ${h.token}` },
-        });
-        assert.equal(r.status, 200);
-        assert.match(r.headers["content-type"] ?? "", /^application\/json/);
-        const out = JSON.parse(r.body);
-        assert.equal(out.schemaVersion, 1);
-        assert.match(out.checkedAt, /Z$/);
-        assert.match(out.recheckAfter, /Z$/);
-        assert.equal(out.providers.length, 2);
-        assert.equal(out.providers[0].id, "claude");
-        assert.equal(out.providers[0].ok, true);
-        assert.equal(out.providers[0].windows[0].kind, "5h");
-        assert.equal(out.providers[1].id, "google");
-        assert.equal(out.providers[1].ok, false);
-        assert.equal(out.providers[1].error.kind, "no-credentials");
-        assert.ok(out.nextEvent, "nextEvent present for the ok provider");
-        assert.equal(out.nextEvent.providerId, "claude");
-        assert.ok(out.nextEvent.atMs > 0);
-        assert.match(out.nextEvent.at, /Z$/);
-        noCors(r.headers);
-      },
-    );
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    await withServer({ providers: [okModule("claude"), failingModule("google")], subtrkDir }, async (h) => {
+      const r = await get(h.port, "/api/status", {
+        headers: { authorization: `Bearer ${h.token}` },
+      });
+      assert.equal(r.status, 200);
+      assert.match(r.headers["content-type"] ?? "", /^application\/json/);
+      const out = JSON.parse(r.body);
+      assert.equal(out.schemaVersion, 1);
+      assert.match(out.checkedAt, /Z$/);
+      assert.match(out.recheckAfter, /Z$/);
+      assert.equal(out.providers.length, 2);
+      assert.equal(out.providers[0].id, "claude");
+      assert.equal(out.providers[0].ok, true);
+      assert.equal(out.providers[0].windows[0].kind, "5h");
+      assert.equal(out.providers[1].id, "google");
+      assert.equal(out.providers[1].ok, false);
+      assert.equal(out.providers[1].error.kind, "no-credentials");
+      assert.ok(out.nextEvent, "nextEvent present for the ok provider");
+      assert.equal(out.nextEvent.providerId, "claude");
+      assert.ok(out.nextEvent.atMs > 0);
+      assert.match(out.nextEvent.at, /Z$/);
+      noCors(r.headers);
+    });
   });
 
   it("timing-safe compare survives short/long/malformed tokens — all 401", async () => {
-    const subtDir = mkdtempSync(join(tmpdir(), "subt-serve-"));
-    await withServer({ providers: [okModule("claude")], subtDir }, async (h) => {
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    await withServer({ providers: [okModule("claude")], subtrkDir }, async (h) => {
       for (const bad of ["abc", `${h.token}ff`, "0".repeat(64), ` ${h.token}`]) {
         const r = await get(h.port, "/api/status", {
           headers: { authorization: `Bearer ${bad}` },
@@ -149,8 +146,8 @@ describe("subt serve", () => {
   });
 
   it("host header allowlist: evil.example → 403, 127.0.0.1:<port> and localhost:<port> pass", async () => {
-    const subtDir = mkdtempSync(join(tmpdir(), "subt-serve-"));
-    await withServer({ providers: [okModule("claude")], subtDir }, async (h) => {
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    await withServer({ providers: [okModule("claude")], subtrkDir }, async (h) => {
       const evil = await get(h.port, "/api/status", { headers: { host: "evil.example" } });
       assert.equal(evil.status, 403);
       assert.deepEqual(JSON.parse(evil.body), { error: "forbidden host" });
@@ -167,25 +164,22 @@ describe("subt serve", () => {
   });
 
   it("/ serves the shell when the file exists; 404 text when missing", async () => {
-    const subtDir = mkdtempSync(join(tmpdir(), "subt-serve-"));
-    const shellPath = join(subtDir, "console.html");
-    writeFileSync(shellPath, "<!doctype html><title>subt</title>");
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    const shellPath = join(subtrkDir, "console.html");
+    writeFileSync(shellPath, "<!doctype html><title>subtrk</title>");
+    await withServer({ providers: [okModule("claude")], subtrkDir, consoleHtmlPath: shellPath }, async (h) => {
+      const r = await get(h.port, "/");
+      assert.equal(r.status, 200);
+      assert.equal(r.headers["content-type"], "text/html; charset=utf-8");
+      assert.equal(
+        r.headers["content-security-policy"],
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
+      );
+      assert.equal(r.body, "<!doctype html><title>subtrk</title>");
+      noCors(r.headers);
+    });
     await withServer(
-      { providers: [okModule("claude")], subtDir, consoleHtmlPath: shellPath },
-      async (h) => {
-        const r = await get(h.port, "/");
-        assert.equal(r.status, 200);
-        assert.equal(r.headers["content-type"], "text/html; charset=utf-8");
-        assert.equal(
-          r.headers["content-security-policy"],
-          "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
-        );
-        assert.equal(r.body, "<!doctype html><title>subt</title>");
-        noCors(r.headers);
-      },
-    );
-    await withServer(
-      { providers: [okModule("claude")], subtDir, consoleHtmlPath: join(subtDir, "absent.html") },
+      { providers: [okModule("claude")], subtrkDir, consoleHtmlPath: join(subtrkDir, "absent.html") },
       async (h) => {
         const r = await get(h.port, "/");
         assert.equal(r.status, 404);
@@ -195,8 +189,8 @@ describe("subt serve", () => {
   });
 
   it("unknown routes → 404 JSON; non-GET → 405 JSON; no CORS headers anywhere", async () => {
-    const subtDir = mkdtempSync(join(tmpdir(), "subt-serve-"));
-    await withServer({ providers: [okModule("claude")], subtDir }, async (h) => {
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    await withServer({ providers: [okModule("claude")], subtrkDir }, async (h) => {
       const miss = await get(h.port, "/nope", { headers: { authorization: `Bearer ${h.token}` } });
       assert.equal(miss.status, 404);
       assert.deepEqual(JSON.parse(miss.body), { error: "not found" });

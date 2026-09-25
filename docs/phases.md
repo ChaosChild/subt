@@ -1,13 +1,13 @@
-# subt — Phases
+# subtrk — Phases
 
 ## M1 — CLI (done)
 
-`subt status` + `subt init`, all six providers, TTL cache, tests.
+`subtrk status` + `subtrk init`, all six providers, TTL cache, tests.
 
 ## M2 — Web console (done)
 
-`subt serve`: loopback-only server (random port + per-run token auth — see
-`docs/spec.md` §`subt serve`), static dashboard + `/api/status` from the same
+`subtrk serve`: loopback-only server (random port + per-run token auth — see
+`docs/spec.md` §`subtrk serve`), static dashboard + `/api/status` from the same
 cache. One page replaces the six vendor tabs: per-provider windows, credits,
 staleness, reset timeline and countdowns.
 

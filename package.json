@@ -1,9 +1,9 @@
 {
-  "name": "subt-cli",
+  "name": "subtrk",
   "version": "0.1.0",
   "description": "One command for all your AI subscription quotas — agent-first usage tracking across Claude, GLM, Alibaba, Google, OpenCode Zen and OpenRouter",
   "bin": {
-    "subt": "./src/cli.ts"
+    "subtrk": "./src/cli.ts"
   },
   "type": "module",
   "engines": {
@@ -11,16 +11,45 @@
   },
   "private": true,
   "scripts": {
-    "test": "node --test \"test/*.test.ts\""
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write ."
   },
   "author": "ChaosChild",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ChaosChild/subt.git"
+    "url": "git+https://github.com/ChaosChild/subtrk.git"
   },
   "bugs": {
-    "url": "https://github.com/ChaosChild/subt/issues"
+    "url": "https://github.com/ChaosChild/subtrk/issues"
   },
-  "homepage": "https://github.com/ChaosChild/subt#readme"
+  "homepage": "https://github.com/ChaosChild/subtrk#readme",
+  "keywords": [
+    "ai",
+    "quota",
+    "usage",
+    "rate-limits",
+    "claude",
+    "glm",
+    "alibaba",
+    "google-gemini",
+    "openrouter",
+    "opencode",
+    "cli",
+    "agents",
+    "axi"
+  ],
+  "files": [
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.7",
+    "@types/node": "^26.1.2",
+    "typescript": "^5.9.3"
+  }
 }

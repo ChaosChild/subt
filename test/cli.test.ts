@@ -31,8 +31,8 @@ function captureConsole(): Captured {
   };
 }
 
-function tempSubtDir(): string {
-  return mkdtempSync(join(tmpdir(), "subt-cli-test-"));
+function tempSubtrkDir(): string {
+  return mkdtempSync(join(tmpdir(), "subtrk-test-"));
 }
 
 function okModule(id: ProviderResult["id"], counter?: { n: number }): ProviderModule {
@@ -73,7 +73,10 @@ describe("usage errors (exit 2)", () => {
   it("unknown flag exits 2 with one stderr line", async () => {
     const cap = captureConsole();
     try {
-      const code = await main(["status", "--nope"], { providers: [okModule("claude")], dirs: { subt: tempSubtDir() } });
+      const code = await main(["status", "--nope"], {
+        providers: [okModule("claude")],
+        dirs: { subtrk: tempSubtrkDir() },
+      });
       assert.equal(code, 2);
       assert.equal(cap.err.length, 1);
       assert.equal(cap.out.length, 0);
@@ -85,7 +88,10 @@ describe("usage errors (exit 2)", () => {
   it("unknown --provider id exits 2", async () => {
     const cap = captureConsole();
     try {
-      const code = await main(["status", "--provider", "kimi"], { providers: [okModule("claude")], dirs: { subt: tempSubtDir() } });
+      const code = await main(["status", "--provider", "kimi"], {
+        providers: [okModule("claude")],
+        dirs: { subtrk: tempSubtrkDir() },
+      });
       assert.equal(code, 2);
       assert.match(cap.err[0], /kimi/);
     } finally {
@@ -96,7 +102,10 @@ describe("usage errors (exit 2)", () => {
   it("unknown --fields name exits 2", async () => {
     const cap = captureConsole();
     try {
-      const code = await main(["status", "--fields", "bogus"], { providers: [okModule("claude")], dirs: { subt: tempSubtDir() } });
+      const code = await main(["status", "--fields", "bogus"], {
+        providers: [okModule("claude")],
+        dirs: { subtrk: tempSubtrkDir() },
+      });
       assert.equal(code, 2);
     } finally {
       cap.restore();
@@ -106,8 +115,14 @@ describe("usage errors (exit 2)", () => {
   it("unknown subcommand and extra positional exit 2", async () => {
     const cap = captureConsole();
     try {
-      assert.equal(await main(["frobnicate"], { providers: [okModule("claude")], dirs: { subt: tempSubtDir() } }), 2);
-      assert.equal(await main(["status", "extra"], { providers: [okModule("claude")], dirs: { subt: tempSubtDir() } }), 2);
+      assert.equal(
+        await main(["frobnicate"], { providers: [okModule("claude")], dirs: { subtrk: tempSubtrkDir() } }),
+        2,
+      );
+      assert.equal(
+        await main(["status", "extra"], { providers: [okModule("claude")], dirs: { subtrk: tempSubtrkDir() } }),
+        2,
+      );
     } finally {
       cap.restore();
     }
@@ -118,7 +133,7 @@ describe("help", () => {
   it("--help exits 0 and prints usage to stdout", async () => {
     const cap = captureConsole();
     try {
-      assert.equal(await main(["--help"], { providers: [okModule("claude")], dirs: { subt: tempSubtDir() } }), 0);
+      assert.equal(await main(["--help"], { providers: [okModule("claude")], dirs: { subtrk: tempSubtrkDir() } }), 0);
       assert.match(cap.out.join("\n"), /usage:/);
       assert.equal(cap.err.length, 0);
     } finally {
@@ -129,8 +144,8 @@ describe("help", () => {
   it("init --help prints init-specific help", async () => {
     const cap = captureConsole();
     try {
-      assert.equal(await main(["init", "--help"], { providers: [], dirs: { subt: tempSubtDir() } }), 0);
-      assert.match(cap.out.join("\n"), /subt init/);
+      assert.equal(await main(["init", "--help"], { providers: [], dirs: { subtrk: tempSubtrkDir() } }), 0);
+      assert.match(cap.out.join("\n"), /subtrk init/);
     } finally {
       cap.restore();
     }
@@ -143,13 +158,13 @@ describe("status with a stubbed registry (exit 0)", () => {
     try {
       const code = await main(["status"], {
         providers: [okModule("claude"), failingModule("google")],
-        dirs: { subt: tempSubtDir() },
+        dirs: { subtrk: tempSubtrkDir() },
       });
       assert.equal(code, 0);
       const text = cap.out.join("\n");
       assert.match(text, /^claude\s+5h 13% \(reset \d\d:\d\d\)/m);
       assert.match(text, /^google\s+error: no-credentials — run agy once to log in \(run agy \/usage\)$/m);
-      assert.ok(text.includes("help: subt status --json | subt status --provider <id> | subt init"));
+      assert.ok(text.includes("help: subtrk status --json | subtrk status --provider <id> | subtrk init"));
       assert.ok(text.includes("next: claude 5h at"));
     } finally {
       cap.restore();
@@ -161,12 +176,12 @@ describe("status with a stubbed registry (exit 0)", () => {
     try {
       const code = await main(["status", "--fields", "errors,hints"], {
         providers: [okModule("claude"), failingModule("google")],
-        dirs: { subt: tempSubtDir() },
+        dirs: { subtrk: tempSubtrkDir() },
       });
       assert.equal(code, 0);
       const text = cap.out.join("\n");
       assert.ok(!/5h 13%/.test(text), "windows filtered out");
-        assert.match(text, /error: no-credentials — run agy once to log in \(run agy \/usage\) — hint: run agy \/usage/);
+      assert.match(text, /error: no-credentials — run agy once to log in \(run agy \/usage\) — hint: run agy \/usage/);
     } finally {
       cap.restore();
     }
@@ -177,7 +192,7 @@ describe("status with a stubbed registry (exit 0)", () => {
     try {
       const code = await main(["status", "--json"], {
         providers: [okModule("claude")],
-        dirs: { subt: tempSubtDir() },
+        dirs: { subtrk: tempSubtrkDir() },
       });
       assert.equal(code, 0);
       const parsed = JSON.parse(cap.out[0]);
@@ -193,7 +208,7 @@ describe("status with a stubbed registry (exit 0)", () => {
   });
 
   it("--strict exits 3 when a provider failed, 0 otherwise", async () => {
-    const dirs = { subt: tempSubtDir() };
+    const dirs = { subtrk: tempSubtrkDir() };
     const cap = captureConsole();
     try {
       assert.equal(await main(["status", "--strict"], { providers: [okModule("claude")], dirs }), 0);
@@ -206,30 +221,30 @@ describe("status with a stubbed registry (exit 0)", () => {
 
 describe("config interaction", () => {
   it("unreadable config exits 1", async () => {
-    const dir = tempSubtDir();
+    const dir = tempSubtrkDir();
     writeFileSync(join(dir, "config.json"), "{broken");
     const cap = captureConsole();
     try {
-      assert.equal(await main(["status"], { providers: [okModule("claude")], dirs: { subt: dir } }), 1);
+      assert.equal(await main(["status"], { providers: [okModule("claude")], dirs: { subtrk: dir } }), 1);
     } finally {
       cap.restore();
     }
   });
 
   it("enabled config filters the registry; empty intersection exits 1", async () => {
-    const dir = tempSubtDir();
+    const dir = tempSubtrkDir();
     writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: ["glm"] }));
     const cap = captureConsole();
     try {
       const code = await main(["status"], {
         providers: [okModule("claude"), okModule("glm")],
-        dirs: { subt: dir },
+        dirs: { subtrk: dir },
       });
       assert.equal(code, 0);
       const ids = cap.out.filter((l) => !l.startsWith("next:") && !l.startsWith("help:")).map((l) => l.split(/\s+/)[0]);
       assert.deepEqual(ids, ["glm"]);
       writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: ["google"] }));
-      assert.equal(await main(["status"], { providers: [okModule("claude")], dirs: { subt: dir } }), 1);
+      assert.equal(await main(["status"], { providers: [okModule("claude")], dirs: { subtrk: dir } }), 1);
     } finally {
       cap.restore();
     }
@@ -238,7 +253,7 @@ describe("config interaction", () => {
 
 describe("--fresh and the claude 300s floor", () => {
   it("claude serves fresh cache under --fresh and warns; other providers re-probe", async () => {
-    const dir = tempSubtDir();
+    const dir = tempSubtrkDir();
     const now = Date.now();
     writeFileSync(
       join(dir, "cache.json"),
@@ -246,17 +261,25 @@ describe("--fresh and the claude 300s floor", () => {
         schemaVersion: 1,
         claude: {
           data: {
-            id: "claude", ok: true, stale: false, fetchedAt: new Date(now - 10_000).toISOString(),
+            id: "claude",
+            ok: true,
+            stale: false,
+            fetchedAt: new Date(now - 10_000).toISOString(),
             windows: [{ kind: "5h", usedPercent: 5, resetsAt: new Date(now + 3600_000).toISOString() }],
           },
-          fetchedAt: now - 10_000, ttlMs: 300_000,
+          fetchedAt: now - 10_000,
+          ttlMs: 300_000,
         },
         glm: {
           data: {
-            id: "glm", ok: true, stale: false, fetchedAt: new Date(now - 10_000).toISOString(),
+            id: "glm",
+            ok: true,
+            stale: false,
+            fetchedAt: new Date(now - 10_000).toISOString(),
             windows: [{ kind: "5h", usedPercent: 5, resetsAt: new Date(now + 3600_000).toISOString() }],
           },
-          fetchedAt: now - 10_000, ttlMs: 60_000,
+          fetchedAt: now - 10_000,
+          ttlMs: 60_000,
         },
       }),
     );
@@ -266,7 +289,7 @@ describe("--fresh and the claude 300s floor", () => {
     try {
       const code = await main(["status", "--fresh"], {
         providers: [okModule("claude", claudeCounter), okModule("glm", glmCounter)],
-        dirs: { subt: dir },
+        dirs: { subtrk: dir },
       });
       assert.equal(code, 0);
       assert.equal(claudeCounter.n, 0, "claude keeps its floor: fresh cache still served");
@@ -292,7 +315,7 @@ describe("scrub reaches rendered output", () => {
           throw new Error("leak sek-live-abc123 via message");
         },
       };
-      const code = await main(["status", "--json"], { providers: [crashing], dirs: { subt: tempSubtDir() } });
+      const code = await main(["status", "--json"], { providers: [crashing], dirs: { subtrk: tempSubtrkDir() } });
       const text = cap.out.join("\n");
       assert.equal(code, 0);
       assert.ok(!text.includes("sek-live-abc123"), "secret must be scrubbed from JSON output");

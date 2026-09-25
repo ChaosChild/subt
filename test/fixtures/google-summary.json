@@ -10,7 +10,12 @@
     {
       "displayName": "Antigravity",
       "buckets": [
-        { "bucketId": "gemini-weekly", "displayName": "Weekly", "resetTime": "2026-09-28T00:00:00Z", "remainingFraction": 0.64 }
+        {
+          "bucketId": "gemini-weekly",
+          "displayName": "Weekly",
+          "resetTime": "2026-09-28T00:00:00Z",
+          "remainingFraction": 0.64
+        }
       ]
     }
   ]

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>subt console</title>
-<meta name="description" content="M2 design mock of the subt serve web console — static, with mock data.">
+<title>subtrk console</title>
+<meta name="description" content="M2 design mock of the subtrk serve web console — static, with mock data.">
 <!-- ponytail: system font stacks, no web fonts — the real page is served offline from 127.0.0.1 and must not call out to a CDN -->
 <style>
 :root {
@@ -180,7 +180,7 @@ footer code { font-family: var(--mono); color: var(--text-2); }
 <body>
 <header>
   <div class="wrap bar">
-    <div class="brand"><div class="logo">s</div>subt <small>console</small></div>
+    <div class="brand"><div class="logo">s</div>subtrk <small>console</small></div>
     <span class="mockchip" title="Static design mock — numbers are fixtures, not live data">Mock data</span>
     <div class="spacer"></div>
     <div class="meta">
@@ -215,7 +215,7 @@ footer code { font-family: var(--mono); color: var(--text-2); }
       <div class="tablewrap"><table id="resets"><thead><tr><th>Provider</th><th>Window</th><th class="r">Used</th><th class="r">Resets</th><th class="r">In</th></tr></thead><tbody></tbody></table></div>
     </div>
     <div class="card">
-      <div class="cardhead"><h3>Same data, agent view</h3><span>subt status</span></div>
+      <div class="cardhead"><h3>Same data, agent view</h3><span>subtrk status</span></div>
       <pre class="term" id="term"></pre>
     </div>
   </section>
@@ -229,12 +229,12 @@ footer code { font-family: var(--mono); color: var(--text-2); }
       <span><i style="background:var(--crit)"></i>≥95%</span>
       <span>[stale] = cached past TTL or served after an error</span>
     </div>
-    <div>Served by <code>subt serve</code> from <code>~/.subt/cache.json</code> · JSON at <code>/api/status</code> · read-only · secrets redacted</div>
+    <div>Served by <code>subtrk serve</code> from <code>~/.subtrk/cache.json</code> · JSON at <code>/api/status</code> · read-only · secrets redacted</div>
   </div>
 </footer>
 
 <script>
-// Mock /api/status payload — same shape as `subt status --json` (docs/spec.md).
+// Mock /api/status payload — same shape as `subtrk status --json` (docs/spec.md).
 // ponytail: fixed clock so the mock always reads sensibly; the real page uses Date.now().
 const NOW = new Date("2026-09-23T13:20:00").getTime();
 const T0 = Date.now();
@@ -409,7 +409,7 @@ function termHTML() {
     if (p.note) segs.push(esc(p.id === "opencode" ? "PAYG · no usage API (signals only)" : p.note));
     return `${p.id.padEnd(11)}${segs.join(" · ")}${p.stale ? '   <span class="s">[stale]</span>' : ""}`;
   };
-  return `<span class="p">$</span> subt\n${STATUS.providers.map(line).join("\n")}\n<span class="c">next: ${esc(STATUS.nextEvent.providerId)} 5h at ${hm(STATUS.nextEvent.at)}</span>\n\n<span class="p">$</span> curl -H "Authorization: Bearer ***" 127.0.0.1:52817/api/status\n<span class="c">{ "schemaVersion": 1, "nextEvent": { "providerId": "claude", … }, … }</span>`;
+  return `<span class="p">$</span> subtrk\n${STATUS.providers.map(line).join("\n")}\n<span class="c">next: ${esc(STATUS.nextEvent.providerId)} 5h at ${hm(STATUS.nextEvent.at)}</span>\n\n<span class="p">$</span> curl -H "Authorization: Bearer ***" 127.0.0.1:52817/api/status\n<span class="c">{ "schemaVersion": 1, "nextEvent": { "providerId": "claude", … }, … }</span>`;
 }
 
 function tick() {
@@ -432,11 +432,11 @@ tick(); setInterval(tick, 1000);
 
 // Theme: follows the OS until toggled; the choice is a per-browser convenience only.
 const root = document.documentElement;
-try { const t = localStorage.getItem("subt-theme"); if (t) root.dataset.theme = t; } catch {}
+try { const t = localStorage.getItem("subtrk-theme"); if (t) root.dataset.theme = t; } catch {}
 document.getElementById("theme").onclick = () => {
   const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   root.dataset.theme = dark ? "light" : "dark";
-  try { localStorage.setItem("subt-theme", root.dataset.theme); } catch {}
+  try { localStorage.setItem("subtrk-theme", root.dataset.theme); } catch {}
 };
 </script>
 </body>

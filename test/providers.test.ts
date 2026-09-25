@@ -1,16 +1,29 @@
 // Pure-parser tests for all six providers — fixtures only, no network, no real user files.
 
-import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-
+import {
+  deriveCredits,
+  extractJson,
+  parseQuotaConfig,
+  parseSubscription,
+  parseTokenPlanUsage,
+  stderrMessage,
+} from "../src/providers/alibaba.ts";
 import { claudeAuth, parseClaudeUsage } from "../src/providers/claude.ts";
 import { glmAuth, parseGlmQuota } from "../src/providers/glm.ts";
-import { deriveCredits, extractJson, parseQuotaConfig, parseSubscription, parseTokenPlanUsage, stderrMessage } from "../src/providers/alibaba.ts";
-import { googleExpired, parseAgyKeyringBlob, parseAntigravityTokenFile, parseGeminiCreds, parseGoogleSummary, slugify } from "../src/providers/google.ts";
+import {
+  googleExpired,
+  parseAgyKeyringBlob,
+  parseAntigravityTokenFile,
+  parseGeminiCreds,
+  parseGoogleSummary,
+  slugify,
+} from "../src/providers/google.ts";
+import { allProviders } from "../src/providers/index.ts";
 import { extractOpencodeKey } from "../src/providers/opencode.ts";
 import { parseOpenrouterCredits, parseOpenrouterKey } from "../src/providers/openrouter.ts";
-import { allProviders } from "../src/providers/index.ts";
 
 function fixture(name: string): unknown {
   return JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"));
@@ -19,13 +32,23 @@ function fixture(name: string): unknown {
 // ---- module contract -------------------------------------------------------
 
 test("allProviders exposes the six modules in spec order with spec TTLs", () => {
-  assert.deepEqual(allProviders.map((p) => p.id), ["claude", "glm", "alibaba", "google", "opencode", "openrouter"]);
+  assert.deepEqual(
+    allProviders.map((p) => p.id),
+    ["claude", "glm", "alibaba", "google", "opencode", "openrouter"],
+  );
   const ttls: Record<string, number> = {};
   for (const p of allProviders) {
     assert.equal(typeof p.probe, "function");
     ttls[p.id] = p.ttlMs;
   }
-  assert.deepEqual(ttls, { claude: 300000, glm: 60000, alibaba: 300000, google: 60000, opencode: 0, openrouter: 60000 });
+  assert.deepEqual(ttls, {
+    claude: 300000,
+    glm: 60000,
+    alibaba: 300000,
+    google: 60000,
+    opencode: 0,
+    openrouter: 60000,
+  });
 });
 
 // ---- claude ----------------------------------------------------------------
@@ -129,7 +152,11 @@ test("glm glmAuth: config key + host origin from baseURL, env fallback, null whe
 
 test("alibaba extractJson survives banner text around the JSON", () => {
   assert.deepEqual(extractJson('banner line\n{"a": 1}\ntrailer line'), { a: 1 });
-  assert.deepEqual(extractJson('pre {"a": {"b": 2}} post'), { a: { b: 2 } }, "nested braces survive first-{..last-} slicing");
+  assert.deepEqual(
+    extractJson('pre {"a": {"b": 2}} post'),
+    { a: { b: 2 } },
+    "nested braces survive first-{..last-} slicing",
+  );
   assert.equal(extractJson('{"a": 1} {"b": 2}'), null, "two top-level objects slice to invalid JSON -> null");
   assert.equal(extractJson("no json here"), null);
   assert.equal(extractJson("{not json}"), null);
@@ -222,7 +249,12 @@ test("google parseGoogleSummary: missing groups -> null, empty groups -> empty a
 
 test("google parseGoogleSummary: bucketId-only bucket derives its kind, kindless bucket is skipped", () => {
   const bucketOnly = {
-    groups: [{ displayName: "Gemini Models", buckets: [{ bucketId: "gemini-5h", remainingFraction: 0.1, resetTime: "2026-09-25T18:00:00Z" }] }],
+    groups: [
+      {
+        displayName: "Gemini Models",
+        buckets: [{ bucketId: "gemini-5h", remainingFraction: 0.1, resetTime: "2026-09-25T18:00:00Z" }],
+      },
+    ],
   };
   assert.deepEqual(parseGoogleSummary(bucketOnly), [
     { kind: "5h", scope: "gemini-models", remainingFraction: 0.1, resetsAt: "2026-09-25T18:00:00.000Z" },
@@ -253,7 +285,13 @@ test("google parseAgyKeyringBlob rejects wrong shapes, tolerates missing or inva
 
 test("google credential parsers: gemini json, antigravity json, bare token", () => {
   const gemini = parseGeminiCreds({ access_token: "AT", refresh_token: "RT", expiry_date: 123 });
-  assert.deepEqual(gemini, { accessToken: "AT", refreshToken: "RT", expiresAtMs: 123, lineage: "gemini", raw: { access_token: "AT", refresh_token: "RT", expiry_date: 123 } });
+  assert.deepEqual(gemini, {
+    accessToken: "AT",
+    refreshToken: "RT",
+    expiresAtMs: 123,
+    lineage: "gemini",
+    raw: { access_token: "AT", refresh_token: "RT", expiry_date: 123 },
+  });
   assert.equal(parseGeminiCreds({}), null);
 
   const antiJson = parseAntigravityTokenFile('{"access_token":"A2","refresh_token":"R2"}');

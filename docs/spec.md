@@ -1,8 +1,8 @@
-# subt — Specification
+# subtrk — Specification
 
 Version 1.1
 
-`subt` is a zero-dependency CLI (TypeScript on Node ≥22.18, executed directly via type
+`subtrk` is a zero-dependency CLI (TypeScript on Node ≥22.18, executed directly via type
 stripping — no build step) that reports remaining quota across paid AI subscriptions,
 designed first for AI agents and second for humans. One process per invocation, one
 shared cache so concurrent agents never hammer provider endpoints.
@@ -11,15 +11,15 @@ shared cache so concurrent agents never hammer provider endpoints.
 
 | Command | Behavior |
 |---|---|
-| `subt` (no args) | Same as `subt status` — live data, never a help screen (AXI: content first) |
-| `subt status` | Probe all enabled providers, render compact text |
-| `subt status --json` | Full structured output (schema below) |
-| `subt status --provider <id>` | Restrict to one provider (repeatable) |
-| `subt status --fields a,b` | Text mode: opt-in extras (`hints`); `windows`/`credits`/`errors` are default segments |
-| `subt status --fresh` | Bypass cache TTLs once (Claude's 300s floor still applies — warns) |
-| `subt status --strict` | Exit 3 if any provider failed |
-| `subt init` | One-time interactive setup (the only interactive command) |
-| `subt serve` | Local web console on 127.0.0.1 (see §`subt serve`) |
+| `subtrk` (no args) | Same as `subtrk status` — live data, never a help screen (AXI: content first) |
+| `subtrk status` | Probe all enabled providers, render compact text |
+| `subtrk status --json` | Full structured output (schema below) |
+| `subtrk status --provider <id>` | Restrict to one provider (repeatable) |
+| `subtrk status --fields a,b` | Text mode: opt-in extras (`hints`); `windows`/`credits`/`errors` are default segments |
+| `subtrk status --fresh` | Bypass cache TTLs once (Claude's 300s floor still applies — warns) |
+| `subtrk status --strict` | Exit 3 if any provider failed |
+| `subtrk init` | One-time interactive setup (the only interactive command) |
+| `subtrk serve` | Local web console on 127.0.0.1 (see §`subtrk serve`) |
 
 Every subcommand supports `--help`; unknown flags exit 2 (fail loud).
 
@@ -35,7 +35,7 @@ google     5h 62% left · weekly 81% left   [stale]
 opencode   PAYG · no usage API (signals only)
 openrouter $74.75 left · key today $1.20
 next: claude 5h at 18:09 (4h 49m)
-help: subt status --json | subt status --provider <id> | subt init
+help: subtrk status --json | subtrk status --provider <id> | subtrk init
 ```
 
 - One line per provider, always — including failures:
@@ -86,7 +86,7 @@ type ErrorKind =
 interface ProviderError {
   kind: ErrorKind;
   message: string;        // one line, redacted
-  hint?: string;          // next step, e.g. "run subt init"
+  hint?: string;          // next step, e.g. "run subtrk init"
   retryAfterMs?: number;  // rate-limited only
   status?: number;        // http-error only
 }
@@ -135,7 +135,7 @@ Streams: machine-readable output and structured errors → stdout. Debug/warning
 
 ## Cache
 
-File `~/.subt/cache.json` (via `os.homedir()` — never manual `~` expansion):
+File `~/.subtrk/cache.json` (via `os.homedir()` — never manual `~` expansion):
 
 ```jsonc
 { "schemaVersion": 1,
@@ -172,21 +172,21 @@ Default TTLs (the policy — no user knobs in v0):
 
 ## Configuration & secrets
 
-- `~/.subt/config.json` — `{ "enabled": ["claude", "glm", …] }`. Absent ⇒ all enabled.
+- `~/.subtrk/config.json` — `{ "enabled": ["claude", "glm", …] }`. Absent ⇒ all enabled.
   That is the entire config in v0 (no knobs).
-- `~/.subt/env` — dotenv format (`KEY=VALUE`, `#` comments), parsed by a ~20-line
-  reader. Holds subt's own keys: `OPENROUTER_API_KEY`, `OPENROUTER_MANAGEMENT_KEY`,
+- `~/.subtrk/env` — dotenv format (`KEY=VALUE`, `#` comments), parsed by a ~20-line
+  reader. Holds subtrk's own keys: `OPENROUTER_API_KEY`, `OPENROUTER_MANAGEMENT_KEY`,
   optionally `OPENCODE_API_KEY`. Real process env wins over the file. Written by
-  `subt init` (hidden-input prompts), never logged, never echoed. Created mode
+  `subtrk init` (hidden-input prompts), never logged, never echoed. Created mode
   `0600` on POSIX; on Windows the profile's default ACLs apply.
 
-**security:** plaintext API keys in `~/.subt/env` — any process running as this user can
+**security:** plaintext API keys in `~/.subtrk/env` — any process running as this user can
 read them; accepted because it is the same trust envelope as every vendor credential
 file we already read (`~/.claude/.credentials.json`, `~/.zcode/cli/config.json`, …)
 and the profile's per-user ACL is the boundary. Escalation path if ever needed: OS
 secret store.
 
-**security:** subt concentrates read access to six vendors' live tokens in one binary —
+**security:** subtrk concentrates read access to six vendors' live tokens in one binary —
 the mechanical redaction layer and the secret-free cache are load-bearing, not
 nice-to-have. Both have tests.
 
@@ -217,7 +217,7 @@ where fetch is used).
 
 - Credential: `~/.claude/.credentials.json` → `claudeAiOauth.accessToken`, `expiresAt`
   (ms), `refreshToken`, `refreshTokenExpiresAt`. Past expiry (60s skew) with a live
-  refresh token → **subt self-refreshes** via `POST
+  refresh token → **subtrk self-refreshes** via `POST
   https://console.anthropic.com/v1/oauth/token` `{grant_type:"refresh_token",
   refresh_token, client_id:"9d1c250a-e61b-44d9-88ed-5944d1962f5e"}` (Claude Code's
   public client), then best-effort atomic write-back of the merged credential
@@ -308,10 +308,10 @@ never read.
 
 - Legacy file-lineage refresh (gemini only, when expired with 60s skew): `POST
   https://oauth2.googleapis.com/token` `{grant_type:"refresh_token", refresh_token,
-  client_id, client_secret}` — the client values come from `~/.subt/env`
+  client_id, client_secret}` — the client values come from `~/.subtrk/env`
   (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ANTIGRAVITY_CLIENT_ID`). They are
   **public installed-app constants** (Google publishes them in gemini-cli's
-  Apache-2.0 source); `subt init` fetches them from upstream when a legacy file
+  Apache-2.0 source); `subtrk init` fetches them from upstream when a legacy file
   credential exists, and no literal lives in this repo — secret scanners stay
   quiet. Missing values → `no-credentials` with the init hint. Write-back to the
   same file is temp+rename best-effort.
@@ -319,11 +319,11 @@ never read.
 ### opencode — Zen pay-as-you-go (signals only)
 
 No usage or balance API exists for PAYG (decided D1). Presence check only: key from
-`~/.subt/env`/env `OPENCODE_API_KEY`, else `~/.local/share/opencode/auth.json`
+`~/.subtrk/env`/env `OPENCODE_API_KEY`, else `~/.local/share/opencode/auth.json`
 (`opencode.key`). Result: `ok: true` with constant note
 `"PAYG — no usage/balance API; inference errors are the only signal"` (401
 CreditsError = out of credits, 429 metadata = window limits, surface during
-inference). Absent everywhere → `no-credentials`, hint `run subt init or opencode auth login`.
+inference). Absent everywhere → `no-credentials`, hint `run subtrk init or opencode auth login`.
 `ttlMs: 0` — bypasses the cache.
 
 ### openrouter — pay-as-you-go
@@ -333,9 +333,9 @@ inference). Absent everywhere → `no-credentials`, hint `run subt init or openc
 - If `OPENROUTER_MANAGEMENT_KEY` present: `GET /api/v1/credits` →
   `credits {remaining: total_credits − total_usage, unit:"usd", source:"api"}`.
   **Never** attempt /credits with the inference key (guaranteed 403).
-- Missing key → `no-credentials`, hint `run subt init`.
+- Missing key → `no-credentials`, hint `run subtrk init`.
 
-## `subt init` (one-time interactive setup)
+## `subtrk init` (one-time interactive setup)
 
 Checks, in order, printing a checklist with pass/fail per provider:
 1. Claude: `~/.claude/.credentials.json` readable + unexpired → else instruct `claude /login`.
@@ -353,13 +353,13 @@ Checks, in order, printing a checklist with pass/fail per provider:
    checked via a literal `cmdkey /list:gemini:antigravity` probe) → `[ok]`; else
    print the agy install one-liner
    (`irm https://antigravity.google/cli/install.ps1 | iex`) + "launch once to log
-   in (subt reads its Credential Manager token directly)".
-5. opencode: `auth.json` or key present → else offer to store one in `~/.subt/env`.
+   in (subtrk reads its Credential Manager token directly)".
+5. opencode: `auth.json` or key present → else offer to store one in `~/.subtrk/env`.
 6. OpenRouter: hidden-input prompts for `OPENROUTER_API_KEY` and optional
-   `OPENROUTER_MANAGEMENT_KEY`, written to `~/.subt/env` (created if absent).
+   `OPENROUTER_MANAGEMENT_KEY`, written to `~/.subtrk/env` (created if absent).
 
-`subt init` never sends a secret anywhere except the owning provider's endpoint, and
-never writes secrets anywhere except `~/.subt/env` and vendor-owned files.
+`subtrk init` never sends a secret anywhere except the owning provider's endpoint, and
+never writes secrets anywhere except `~/.subtrk/env` and vendor-owned files.
 
 ## AXI conformance summary
 
@@ -367,12 +367,12 @@ Token-efficient default output (compact lines; TOON serializer deferred — payl
 ~200 tokens, the serializer would cost more than it saves) · minimal default schema
 with `--fields` · pre-computed aggregates (`nextEvent`, `recheckAfter`, per-window
 percent) · definitive empty states (every provider always emits a state) · structured
-errors + exit codes, agent commands never prompt · content-first (bare `subt` = status)
+errors + exit codes, agent commands never prompt · content-first (bare `subtrk` = status)
 · contextual `help:` line · consistent `--help` · secrets redacted by default ·
 `--confirm` gating reserved for any future state-changing operation (e.g. grant
 redemption, if ever un-parked).
 
-## `subt serve` — local web console
+## `subtrk serve` — local web console
 
 One page for every provider, served from the same cache the CLI reads.
 
@@ -386,9 +386,9 @@ One page for every provider, served from the same cache the CLI reads.
   script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'
   data:; connect-src 'self'`. The shell reads the token from the fragment and
   sends it as `Authorization: Bearer <token>` on every API call; on 401 it
-  tells the user to restart `subt serve` and open the fresh URL.
+  tells the user to restart `subtrk serve` and open the fresh URL.
 - `GET /api/status` → the identical scrubbed StatusOutput JSON that
-  `subt status --json` prints, refreshed through the same cache (TTLs
+  `subtrk status --json` prints, refreshed through the same cache (TTLs
   honored). The Bearer compare is timing-safe; missing/wrong token → 401.
 - Hardening: the Host header must be `127.0.0.1[:port]` or
   `localhost[:port]` (403 otherwise — DNS-rebinding defense); no CORS headers

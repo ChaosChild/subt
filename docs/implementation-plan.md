@@ -1,16 +1,16 @@
-# subt — Implementation Guide
+# subtrk — Implementation Guide
 
 How the codebase is organized, the rules all code follows, and how to extend it.
 
 ## Layout
 
 ```
-package.json          bin "subt", type module, engines >=22.18, zero dependencies
+package.json          bin "subtrk", type module, engines >=22.18, zero dependencies
 src/cli.ts            entry point: arg parsing, orchestration, rendering, exit codes
-src/serve.ts          the `subt serve` web console backend (see docs/spec.md)
+src/serve.ts          the `subtrk serve` web console backend (see docs/spec.md)
 src/console.html      the console dashboard page (served at /)
 src/init.ts           one-time interactive setup (the only interactive command)
-src/core.ts           types, config, ~/.subt/env parser, TTL cache, redaction, scheduling math, collectStatus
+src/core.ts           types, config, ~/.subtrk/env parser, TTL cache, redaction, scheduling math, collectStatus
 src/providers/*.ts    one module per provider — the only code that knows endpoints
 test/*.test.ts        node:test suites (fixtures only; tests never touch the network)
 test/fixtures/        captured real response shapes per provider
@@ -63,7 +63,7 @@ so tests can exercise them against fixtures without network access.
 3. Add fixtures captured from the real endpoint to `test/fixtures/` and parser
    tests to `test/providers.test.ts`; include a redaction path in
    `test/redaction.test.ts`.
-4. If setup is needed, extend `subt init` with an honest per-step result line.
+4. If setup is needed, extend `subtrk init` with an honest per-step result line.
 5. Document the integration in `docs/spec.md` §Provider integrations and add a
    row to the README provider table.
 
@@ -74,4 +74,4 @@ npm test          # node --test over test/*.test.ts
 ```
 
 Tests are fixture-driven and offline. Live verification of a provider is a
-manual step: `subt status --provider <id> --fresh` and reading the output.
+manual step: `subtrk status --provider <id> --fresh` and reading the output.

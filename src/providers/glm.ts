@@ -34,7 +34,13 @@ export function glmAuth(configObj: unknown, envToken: string | undefined): { api
   return apiKey ? { apiKey, host } : null;
 }
 
-interface GlmLimit { type?: unknown; unit?: unknown; number?: unknown; percentage?: unknown; nextResetTime?: unknown }
+interface GlmLimit {
+  type?: unknown;
+  unit?: unknown;
+  number?: unknown;
+  percentage?: unknown;
+  nextResetTime?: unknown;
+}
 
 // Pure: data.limits[] TOKENS_LIMIT entries -> windows (unit 3 = hours, unit 6 = weeks);
 // TIME_LIMIT entries are built-in-tool quota and ignored in v0. data.level -> plan label.
@@ -52,8 +58,10 @@ export function parseGlmQuota(body: unknown): { windows: Window[]; plan?: string
     if (typeof l.number !== "number" || typeof l.percentage !== "number") return null;
     if (typeof l.nextResetTime !== "number" || !Number.isFinite(l.nextResetTime)) return null;
     let kind: string;
-    if (l.unit === 3) kind = `${l.number}h`; // hours — the 5h window when number is 5
-    else if (l.unit === 6) kind = l.number === 1 ? "7d" : `${l.number}w`; // weeks
+    if (l.unit === 3)
+      kind = `${l.number}h`; // hours — the 5h window when number is 5
+    else if (l.unit === 6)
+      kind = l.number === 1 ? "7d" : `${l.number}w`; // weeks
     else continue; // unknown unit — ignore entry
     windows.push({ kind, usedPercent: l.percentage, resetsAt: new Date(l.nextResetTime).toISOString() });
   }
@@ -87,17 +95,34 @@ async function fetchText(url: string, init: RequestInit): Promise<FetchOutcome> 
       return { ok: false, status: res.status, error: { kind: "parse-failure", message: "response exceeds 1MB cap" } };
     }
     if (res.status === 429) {
-      return { ok: false, status: res.status, text, error: { kind: "rate-limited", message: "rate limited (429)", retryAfterMs: retryAfterMs(res.headers.get("retry-after")) } };
+      return {
+        ok: false,
+        status: res.status,
+        text,
+        error: {
+          kind: "rate-limited",
+          message: "rate limited (429)",
+          retryAfterMs: retryAfterMs(res.headers.get("retry-after")),
+        },
+      };
     }
     if (!res.ok) {
-      return { ok: false, status: res.status, text, error: { kind: "http-error", message: `HTTP ${res.status}`, status: res.status } };
+      return {
+        ok: false,
+        status: res.status,
+        text,
+        error: { kind: "http-error", message: `HTTP ${res.status}`, status: res.status },
+      };
     }
     return { ok: true, status: res.status, text };
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
       return { ok: false, error: { kind: "timeout", message: `request timed out after ${TIMEOUT_MS / 1000}s` } };
     }
-    return { ok: false, error: { kind: "http-error", message: `network error: ${e instanceof Error ? e.message : "unknown"}` } };
+    return {
+      ok: false,
+      error: { kind: "http-error", message: `network error: ${e instanceof Error ? e.message : "unknown"}` },
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -142,13 +167,16 @@ async function probeInner(): Promise<ProviderResult> {
   }
   const auth = glmAuth(configObj, await getSecret("ANTHROPIC_AUTH_TOKEN"));
   if (!auth) {
-    return fail({
-      kind: "no-credentials",
-      message: configUnreadable
-        ? "~/.zcode/cli/config.json unreadable and no ANTHROPIC_AUTH_TOKEN set"
-        : "no provider.zai.apiKey in ~/.zcode/cli/config.json and no ANTHROPIC_AUTH_TOKEN set",
-      hint: "check ZCode login",
-    }, fetchedAt);
+    return fail(
+      {
+        kind: "no-credentials",
+        message: configUnreadable
+          ? "~/.zcode/cli/config.json unreadable and no ANTHROPIC_AUTH_TOKEN set"
+          : "no provider.zai.apiKey in ~/.zcode/cli/config.json and no ANTHROPIC_AUTH_TOKEN set",
+        hint: "check ZCode login",
+      },
+      fetchedAt,
+    );
   }
   void registerSecret(auth.apiKey);
 
@@ -157,7 +185,10 @@ async function probeInner(): Promise<ProviderResult> {
   });
   if (!out.ok) {
     if (out.status === 401) {
-      return fail({ kind: "no-credentials", message: "GLM rejected the API key (401)", hint: "check ZCode login" }, fetchedAt);
+      return fail(
+        { kind: "no-credentials", message: "GLM rejected the API key (401)", hint: "check ZCode login" },
+        fetchedAt,
+      );
     }
     return fail(out.error, fetchedAt);
   }
@@ -176,8 +207,13 @@ const provider: ProviderModule = {
   id: "glm",
   ttlMs: 60_000,
   probe(): Promise<ProviderResult> {
-    return probeInner().catch((e: unknown): ProviderResult =>
-      fail({ kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` }, new Date().toISOString()));
+    return probeInner().catch(
+      (e: unknown): ProviderResult =>
+        fail(
+          { kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` },
+          new Date().toISOString(),
+        ),
+    );
   },
 };
 export default provider;

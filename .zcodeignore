@@ -3,7 +3,7 @@ node_modules/
 .cavet/
 .DS_Store
 Thumbs.db
-subt-tmp.json
+subtrk-tmp.json
 
 # ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
 .git/

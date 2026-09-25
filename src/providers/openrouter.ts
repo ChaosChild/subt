@@ -56,23 +56,40 @@ async function fetchText(url: string, init: RequestInit): Promise<FetchOutcome> 
       return { ok: false, status: res.status, error: { kind: "parse-failure", message: "response exceeds 1MB cap" } };
     }
     if (res.status === 429) {
-      return { ok: false, status: res.status, text, error: { kind: "rate-limited", message: "rate limited (429)", retryAfterMs: retryAfterMs(res.headers.get("retry-after")) } };
+      return {
+        ok: false,
+        status: res.status,
+        text,
+        error: {
+          kind: "rate-limited",
+          message: "rate limited (429)",
+          retryAfterMs: retryAfterMs(res.headers.get("retry-after")),
+        },
+      };
     }
     if (!res.ok) {
-      return { ok: false, status: res.status, text, error: { kind: "http-error", message: `HTTP ${res.status}`, status: res.status } };
+      return {
+        ok: false,
+        status: res.status,
+        text,
+        error: { kind: "http-error", message: `HTTP ${res.status}`, status: res.status },
+      };
     }
     return { ok: true, status: res.status, text };
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
       return { ok: false, error: { kind: "timeout", message: `request timed out after ${TIMEOUT_MS / 1000}s` } };
     }
-    return { ok: false, error: { kind: "http-error", message: `network error: ${e instanceof Error ? e.message : "unknown"}` } };
+    return {
+      ok: false,
+      error: { kind: "http-error", message: `network error: ${e instanceof Error ? e.message : "unknown"}` },
+    };
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Real process env wins; core (which merges ~/.subt/env) is consulted when present.
+// Real process env wins; core (which merges ~/.subtrk/env) is consulted when present.
 async function getSecret(name: string): Promise<string | undefined> {
   const fromEnv = process.env[name];
   if (fromEnv) return fromEnv;
@@ -105,14 +122,17 @@ async function probeInner(): Promise<ProviderResult> {
   const fetchedAt = new Date().toISOString();
   const key = await getSecret("OPENROUTER_API_KEY");
   if (!key) {
-    return fail({ kind: "no-credentials", message: "OPENROUTER_API_KEY not set", hint: "run subt init" }, fetchedAt);
+    return fail({ kind: "no-credentials", message: "OPENROUTER_API_KEY not set", hint: "run subtrk init" }, fetchedAt);
   }
   void registerSecret(key);
 
   const out = await fetchText(KEY_URL, { headers: { Authorization: `Bearer ${key}` } });
   if (!out.ok) {
     if (out.status === 401) {
-      return fail({ kind: "no-credentials", message: "OpenRouter rejected the API key (401)", hint: "run subt init" }, fetchedAt);
+      return fail(
+        { kind: "no-credentials", message: "OpenRouter rejected the API key (401)", hint: "run subtrk init" },
+        fetchedAt,
+      );
     }
     return fail(out.error, fetchedAt);
   }
@@ -148,8 +168,13 @@ const provider: ProviderModule = {
   id: "openrouter",
   ttlMs: 60_000,
   probe(): Promise<ProviderResult> {
-    return probeInner().catch((e: unknown): ProviderResult =>
-      fail({ kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` }, new Date().toISOString()));
+    return probeInner().catch(
+      (e: unknown): ProviderResult =>
+        fail(
+          { kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` },
+          new Date().toISOString(),
+        ),
+    );
   },
 };
 export default provider;

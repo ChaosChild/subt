@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>subt console</title>
-<meta name="description" content="Live web console served by subt serve.">
+<title>subtrk console</title>
+<meta name="description" content="Live web console served by subtrk serve.">
 <!-- ponytail: system font stacks, no web fonts — the page is served offline from 127.0.0.1 and must not call out to a CDN -->
 <style>
 :root {
@@ -182,7 +182,7 @@ footer code { font-family: var(--mono); color: var(--text-2); }
 <body>
 <header>
   <div class="wrap bar">
-    <div class="brand"><div class="logo">s</div>subt <small>console</small></div>
+    <div class="brand"><div class="logo">s</div>subtrk <small>console</small></div>
     <div class="spacer"></div>
     <div class="meta">
       <span class="hide-sm"><span class="dot"></span>&nbsp; <span id="host">127.0.0.1</span> · token auth</span>
@@ -228,7 +228,7 @@ footer code { font-family: var(--mono); color: var(--text-2); }
       <div class="tablewrap"><table id="resets"><thead><tr><th>Provider</th><th>Window</th><th class="r">Used</th><th class="r">Resets</th><th class="r">In</th></tr></thead><tbody><tr><td colspan="5">…</td></tr></tbody></table></div>
     </div>
     <div class="card">
-      <div class="cardhead"><h3>Same data, agent view</h3><span>subt status</span></div>
+      <div class="cardhead"><h3>Same data, agent view</h3><span>subtrk status</span></div>
       <pre class="term" id="term">…</pre>
     </div>
   </section>
@@ -242,12 +242,12 @@ footer code { font-family: var(--mono); color: var(--text-2); }
       <span><i style="background:var(--crit)"></i>≥95%</span>
       <span>[stale] = cached past TTL or served after an error</span>
     </div>
-    <div>Served by <code>subt serve</code> from <code>~/.subt/cache.json</code> · JSON at <code>/api/status</code> · read-only · secrets redacted</div>
+    <div>Served by <code>subtrk serve</code> from <code>~/.subtrk/cache.json</code> · JSON at <code>/api/status</code> · read-only · secrets redacted</div>
   </div>
 </footer>
 
 <script>
-// subt serve console — live page.
+// subtrk serve console — live page.
 // The bearer token arrives in the URL fragment (#<token> or #token=<token>) and is
 // used only as the Authorization header on /api/status requests: never stored,
 // never logged, never rendered, never placed in a query string.
@@ -433,7 +433,7 @@ function termHTML() {
     if (p.note) segs.push(esc(p.id === "opencode" ? "PAYG · no usage API (signals only)" : p.note));
     return `${esc(p.id).padEnd(11)}${segs.join(" · ")}${p.stale ? '   <span class="s">[stale]</span>' : ""}`;
   };
-  return `<span class="p">$</span> subt\n${STATUS.providers.map(line).join("\n")}\n\n<span class="p">$</span> curl -H "Authorization: Bearer ***" ${HOST}/api/status\n<span class="c">{ "schemaVersion": 1, "nextEvent": { … }, … }</span>`;
+  return `<span class="p">$</span> subtrk\n${STATUS.providers.map(line).join("\n")}\n\n<span class="p">$</span> curl -H "Authorization: Bearer ***" ${HOST}/api/status\n<span class="c">{ "schemaVersion": 1, "nextEvent": { … }, … }</span>`;
 }
 
 function renderAll() {
@@ -479,7 +479,7 @@ async function refresh() {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (res.status === 401) {
-      showBanner("crit", "token rejected — restart subt serve and open the fresh URL");
+      showBanner("crit", "token rejected — restart subtrk serve and open the fresh URL");
       schedule(FALLBACK_MS);
       return;
     }
@@ -488,7 +488,7 @@ async function refresh() {
     const ms = STATUS.recheckAfter ? new Date(STATUS.recheckAfter) - now() : NaN;
     schedule(Number.isFinite(ms) && ms > 0 ? Math.max(1000, ms) : FALLBACK_MS);
   } catch (e) {
-    showBanner("warn", "cannot reach subt serve — is it still running?");
+    showBanner("warn", "cannot reach subtrk serve — is it still running?");
     schedule(FALLBACK_MS);
   } finally {
     inFlight = false;
@@ -508,11 +508,11 @@ addEventListener("hashchange", () => {
 // Theme: follows the OS until toggled; the choice is a per-browser convenience only.
 // (Only the theme is persisted — the bearer token never touches storage.)
 const root = document.documentElement;
-try { const t = localStorage.getItem("subt-theme"); if (t) root.dataset.theme = t; } catch {}
+try { const t = localStorage.getItem("subtrk-theme"); if (t) root.dataset.theme = t; } catch {}
 $("theme").onclick = () => {
   const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   root.dataset.theme = dark ? "light" : "dark";
-  try { localStorage.setItem("subt-theme", root.dataset.theme); } catch {}
+  try { localStorage.setItem("subtrk-theme", root.dataset.theme); } catch {}
 };
 </script>
 </body>

@@ -1,17 +1,18 @@
 // Regression: askHidden must leave stdin usable by later prompts. A for-await
 // loop over stdin destroys the stream on break, so the question right after
 // a hidden prompt resolved immediately and init exited.
-import test from "node:test";
+
 import assert from "node:assert/strict";
-import { PassThrough } from "node:stream";
 import { createInterface } from "node:readline/promises";
+import { PassThrough } from "node:stream";
+import test from "node:test";
 import { askHidden } from "../src/init.ts";
 
-function fakeTty(): NodeJS.ReadableStream {
-  const s = new PassThrough() as PassThrough & { isTTY?: boolean; setRawMode?: (m: boolean) => void };
+function fakeTty(): PassThrough & { isTTY: boolean; setRawMode: (m: boolean) => void } {
+  const s = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (m: boolean) => void };
   s.isTTY = true;
   s.setRawMode = () => {};
-  return s as unknown as NodeJS.ReadableStream;
+  return s;
 }
 
 test("askHidden leaves stdin usable for the next prompt", async () => {

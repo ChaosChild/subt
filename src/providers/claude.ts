@@ -1,7 +1,7 @@
 // claude — Claude Pro personal subscription via the OAuth usage endpoint.
 // Credential: ~/.claude/.credentials.json. Claude Code only refreshes the token
 // while it runs, so when the access token is expired but the refresh token is
-// still live, subt refreshes it against Claude Code's public OAuth client and
+// still live, subtrk refreshes it against Claude Code's public OAuth client and
 // writes the rotated pair back best-effort.
 
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -18,7 +18,10 @@ const REFRESH_URL = "https://console.anthropic.com/v1/oauth/token";
 const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const EXPIRED_HINT = "start Claude Code once so it refreshes the token, or run claude /login";
 
-export interface ClaudeAuthOk { ok: true; accessToken: string }
+export interface ClaudeAuthOk {
+  ok: true;
+  accessToken: string;
+}
 export interface ClaudeAuthFail {
   ok: false;
   error: ProviderError;
@@ -34,14 +37,36 @@ export type ClaudeAuth = ClaudeAuthOk | ClaudeAuthFail;
 export function claudeAuth(fileObj: unknown, nowMs: number): ClaudeAuth {
   const oauth = (fileObj as { claudeAiOauth?: unknown } | null)?.claudeAiOauth;
   if (typeof oauth !== "object" || oauth === null) {
-    return { ok: false, error: { kind: "no-credentials", message: "credentials file has no claudeAiOauth object", hint: "run claude /login" } };
+    return {
+      ok: false,
+      error: {
+        kind: "no-credentials",
+        message: "credentials file has no claudeAiOauth object",
+        hint: "run claude /login",
+      },
+    };
   }
-  const o = oauth as { accessToken?: unknown; refreshToken?: unknown; expiresAt?: unknown; refreshTokenExpiresAt?: unknown };
+  const o = oauth as {
+    accessToken?: unknown;
+    refreshToken?: unknown;
+    expiresAt?: unknown;
+    refreshTokenExpiresAt?: unknown;
+  };
   if (typeof o.accessToken !== "string" || o.accessToken === "") {
-    return { ok: false, error: { kind: "no-credentials", message: "claudeAiOauth.accessToken missing", hint: "run claude /login" } };
+    return {
+      ok: false,
+      error: { kind: "no-credentials", message: "claudeAiOauth.accessToken missing", hint: "run claude /login" },
+    };
   }
   if (typeof o.expiresAt !== "number" || !Number.isFinite(o.expiresAt)) {
-    return { ok: false, error: { kind: "parse-failure", message: "claudeAiOauth.expiresAt is not an epoch-ms number", hint: "run claude /login" } };
+    return {
+      ok: false,
+      error: {
+        kind: "parse-failure",
+        message: "claudeAiOauth.expiresAt is not an epoch-ms number",
+        hint: "run claude /login",
+      },
+    };
   }
   if (nowMs >= o.expiresAt - SKEW_MS) {
     const expired: ClaudeAuthFail = {
@@ -63,14 +88,20 @@ export function buildRefreshBody(refreshToken: string): string {
   return JSON.stringify({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: CLIENT_ID });
 }
 
-interface ClaudeUsageWin { utilization?: unknown; resets_at?: unknown }
+interface ClaudeUsageWin {
+  utilization?: unknown;
+  resets_at?: unknown;
+}
 
 // Pure: map the usage endpoint body to spec windows; null when the shape is unrecognized.
 export function parseClaudeUsage(body: unknown): { windows: Window[] } | null {
   if (typeof body !== "object" || body === null) return null;
   const b = body as { five_hour?: ClaudeUsageWin; seven_day?: ClaudeUsageWin };
   const windows: Window[] = [];
-  const pairs: Array<[string, ClaudeUsageWin | undefined]> = [["5h", b.five_hour], ["7d", b.seven_day]];
+  const pairs: Array<[string, ClaudeUsageWin | undefined]> = [
+    ["5h", b.five_hour],
+    ["7d", b.seven_day],
+  ];
   for (const [kind, w] of pairs) {
     if (w === undefined) continue;
     if (typeof w.utilization !== "number" || typeof w.resets_at !== "string") return null;
@@ -108,17 +139,34 @@ async function fetchText(url: string, init: RequestInit): Promise<FetchOutcome> 
       return { ok: false, status: res.status, error: { kind: "parse-failure", message: "response exceeds 1MB cap" } };
     }
     if (res.status === 429) {
-      return { ok: false, status: res.status, text, error: { kind: "rate-limited", message: "rate limited (429)", retryAfterMs: retryAfterMs(res.headers.get("retry-after")) } };
+      return {
+        ok: false,
+        status: res.status,
+        text,
+        error: {
+          kind: "rate-limited",
+          message: "rate limited (429)",
+          retryAfterMs: retryAfterMs(res.headers.get("retry-after")),
+        },
+      };
     }
     if (!res.ok) {
-      return { ok: false, status: res.status, text, error: { kind: "http-error", message: `HTTP ${res.status}`, status: res.status } };
+      return {
+        ok: false,
+        status: res.status,
+        text,
+        error: { kind: "http-error", message: `HTTP ${res.status}`, status: res.status },
+      };
     }
     return { ok: true, status: res.status, text };
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
       return { ok: false, error: { kind: "timeout", message: `request timed out after ${TIMEOUT_MS / 1000}s` } };
     }
-    return { ok: false, error: { kind: "http-error", message: `network error: ${e instanceof Error ? e.message : "unknown"}` } };
+    return {
+      ok: false,
+      error: { kind: "http-error", message: `network error: ${e instanceof Error ? e.message : "unknown"}` },
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -139,7 +187,11 @@ function fail(error: ProviderError, fetchedAt: string): ProviderResult {
   return { id: "claude", ok: false, stale: false, fetchedAt, error };
 }
 
-interface Refreshed { accessToken: string; refreshToken: string; expiresAtMs: number }
+interface Refreshed {
+  accessToken: string;
+  refreshToken: string;
+  expiresAtMs: number;
+}
 
 // Exchange the refresh token for a rotated pair. Null on any failure — the
 // caller falls back to the plain expired-token error.
@@ -158,9 +210,13 @@ async function refreshOAuthToken(refreshToken: string): Promise<Refreshed | null
   }
   const b = body as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown };
   if (
-    typeof b.access_token !== "string" || b.access_token === "" ||
-    typeof b.refresh_token !== "string" || b.refresh_token === "" ||
-    typeof b.expires_in !== "number" || !Number.isFinite(b.expires_in) || b.expires_in <= 0
+    typeof b.access_token !== "string" ||
+    b.access_token === "" ||
+    typeof b.refresh_token !== "string" ||
+    b.refresh_token === "" ||
+    typeof b.expires_in !== "number" ||
+    !Number.isFinite(b.expires_in) ||
+    b.expires_in <= 0
   ) {
     return null;
   }
@@ -207,13 +263,23 @@ async function probeInner(): Promise<ProviderResult> {
   try {
     text = readFileSync(credPath, "utf8");
   } catch {
-    return fail({ kind: "no-credentials", message: "no Claude credentials at ~/.claude/.credentials.json", hint: "run claude /login" }, fetchedAt);
+    return fail(
+      {
+        kind: "no-credentials",
+        message: "no Claude credentials at ~/.claude/.credentials.json",
+        hint: "run claude /login",
+      },
+      fetchedAt,
+    );
   }
   let fileObj: unknown;
   try {
     fileObj = JSON.parse(text);
   } catch {
-    return fail({ kind: "parse-failure", message: "Claude credentials file is not valid JSON", hint: "run claude /login" }, fetchedAt);
+    return fail(
+      { kind: "parse-failure", message: "Claude credentials file is not valid JSON", hint: "run claude /login" },
+      fetchedAt,
+    );
   }
   const auth = claudeAuth(fileObj, Date.now());
   let accessToken: string;
@@ -240,7 +306,7 @@ async function probeInner(): Promise<ProviderResult> {
 
   const out = await fetchText(USAGE_URL, {
     headers: {
-      Authorization: `Bearer ${auth.accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
       "anthropic-beta": "oauth-2025-04-20",
       "anthropic-version": "2023-06-01",
       "User-Agent": "claude-code/2.1.11",
@@ -248,7 +314,10 @@ async function probeInner(): Promise<ProviderResult> {
   });
   if (!out.ok) {
     if (out.status === 401) {
-      return fail({ kind: "expired-token", message: "Claude rejected the access token (401)", hint: "run claude /login" }, fetchedAt);
+      return fail(
+        { kind: "expired-token", message: "Claude rejected the access token (401)", hint: "run claude /login" },
+        fetchedAt,
+      );
     }
     return fail(out.error, fetchedAt);
   }
@@ -259,7 +328,8 @@ async function probeInner(): Promise<ProviderResult> {
     return fail({ kind: "parse-failure", message: "usage response was not JSON" }, fetchedAt);
   }
   const parsed = parseClaudeUsage(body);
-  if (!parsed) return fail({ kind: "parse-failure", message: "usage response missing five_hour/seven_day keys" }, fetchedAt);
+  if (!parsed)
+    return fail({ kind: "parse-failure", message: "usage response missing five_hour/seven_day keys" }, fetchedAt);
   return { id: "claude", ok: true, stale: false, fetchedAt, windows: parsed.windows };
 }
 
@@ -267,8 +337,13 @@ const provider: ProviderModule = {
   id: "claude",
   ttlMs: 300_000,
   probe(): Promise<ProviderResult> {
-    return probeInner().catch((e: unknown): ProviderResult =>
-      fail({ kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` }, new Date().toISOString()));
+    return probeInner().catch(
+      (e: unknown): ProviderResult =>
+        fail(
+          { kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` },
+          new Date().toISOString(),
+        ),
+    );
   },
 };
 export default provider;

@@ -19,11 +19,21 @@ function callArgs(api: string): { literal: string; args: string[] } {
   };
 }
 
-interface BlRun { ok: boolean; stdout: string; stderr: string; toolMissing: boolean; timedOut: boolean }
+interface BlRun {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  toolMissing: boolean;
+  timedOut: boolean;
+}
 
 function runBl(literal: string, args: readonly string[]): Promise<BlRun> {
   return new Promise((resolve) => {
-    const finish = (err: (Error & { code?: string | number; killed?: boolean }) | null, stdout: string | Buffer, stderr: string | Buffer): void => {
+    const finish = (
+      err: (Error & { code?: string | number; killed?: boolean }) | null,
+      stdout: string | Buffer,
+      stderr: string | Buffer,
+    ): void => {
       const out = String(stdout ?? "");
       const errText = String(stderr ?? "");
       if (err) {
@@ -92,7 +102,11 @@ export function parseTokenPlanUsage(envelope: unknown): Window[] {
   return windows;
 }
 
-export interface SubscriptionInfo { specCode?: string; remainingDays?: number; status?: string }
+export interface SubscriptionInfo {
+  specCode?: string;
+  remainingDays?: number;
+  status?: string;
+}
 
 // Pure: v2/subscription — spec tier ("standard"), renewal countdown, status.
 export function parseSubscription(envelope: unknown): SubscriptionInfo {
@@ -160,10 +174,20 @@ async function probeInner(): Promise<ProviderResult> {
     if (run.ok) return null;
     const s = (run.stderr ?? "").toLowerCase();
     if (s.includes("is not recognized") || s.includes("command not found") || s.includes("not found")) {
-      return fail({ kind: "tool-missing", message: "'bl' not found on PATH", hint: "npm i -g bailian-cli, then subt init" }, fetchedAt);
+      return fail(
+        { kind: "tool-missing", message: "'bl' not found on PATH", hint: "npm i -g bailian-cli, then subtrk init" },
+        fetchedAt,
+      );
     }
     if (s.includes("no console access token") || s.includes("not logged in or has expired")) {
-      return fail({ kind: "no-credentials", message: "bl console session missing or expired", hint: "run subt init (bl auth login --console)" }, fetchedAt);
+      return fail(
+        {
+          kind: "no-credentials",
+          message: "bl console session missing or expired",
+          hint: "run subtrk init (bl auth login --console)",
+        },
+        fetchedAt,
+      );
     }
     if (run.timedOut) {
       return fail({ kind: "timeout", message: `bl timed out after ${BL_TIMEOUT_MS / 1000}s` }, fetchedAt);
@@ -208,13 +232,14 @@ async function probeInner(): Promise<ProviderResult> {
 const provider: ProviderModule = {
   id: "alibaba",
   ttlMs: 300_000,
-  probe: () => probeInner().catch((err: unknown) => ({
-    id: "alibaba" as const,
-    ok: false,
-    stale: false,
-    fetchedAt: new Date().toISOString(),
-    error: { kind: "parse-failure" as const, message: `probe crashed: ${String(err).slice(0, 120)}` },
-  })),
+  probe: () =>
+    probeInner().catch((err: unknown) => ({
+      id: "alibaba" as const,
+      ok: false,
+      stale: false,
+      fetchedAt: new Date().toISOString(),
+      error: { kind: "parse-failure" as const, message: `probe crashed: ${String(err).slice(0, 120)}` },
+    })),
 };
 
 export default provider;

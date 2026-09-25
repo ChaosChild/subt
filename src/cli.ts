@@ -1,29 +1,29 @@
 #!/usr/bin/env node
-// cli.ts — subt entry point. `subt` / `subt status` / `subt init` / `subt serve`.
+import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+// cli.ts — subtrk entry point. `subtrk` / `subtrk status` / `subtrk init` / `subtrk serve`.
 // The providers registry lives in ./providers/index.ts (allProviders) and is
 // imported lazily (from collectStatus) so tests can inject a stub registry via
 // main()'s deps seam.
 import { parseArgs } from "node:util";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import { realpathSync } from "node:fs";
 import {
   ALL_PROVIDER_IDS,
+  type Credits,
   collectStatus,
   errorMessage,
-  scrub,
-  scrubValue,
-  type Credits,
   type ProviderModule,
   type ProviderResult,
   type StatusOutput,
+  scrub,
+  scrubValue,
   type Window,
 } from "./core.ts";
 import { runInit } from "./init.ts";
 import { runServe } from "./serve.ts";
 
 export interface CliDirs {
-  subt?: string; // override ~/.subt (tests)
+  subtrk?: string; // override ~/.subtrk (tests)
 }
 
 export interface CliDeps {
@@ -34,13 +34,13 @@ export interface CliDeps {
 const STATUS_FIELDS = ["windows", "credits", "errors", "hints"] as const;
 type StatusField = (typeof STATUS_FIELDS)[number];
 
-const USAGE = `subt — remaining quota across paid AI subscriptions
+const USAGE = `subtrk — remaining quota across paid AI subscriptions
 
 usage:
-  subt                  same as: subt status
-  subt status [flags]   probe enabled providers, compact text
-  subt init             one-time interactive setup
-  subt serve            local web console (read-only, loopback only)
+  subtrk                  same as: subtrk status
+  subtrk status [flags]   probe enabled providers, compact text
+  subtrk init             one-time interactive setup
+  subtrk serve            local web console (read-only, loopback only)
 
 status flags:
   --json                machine-readable output (schemaVersion 1)
@@ -52,16 +52,16 @@ status flags:
 
 exit codes: 0 ran · 1 runtime failure · 2 usage error · 3 --strict violation`;
 
-const SERVE_USAGE = `subt serve — local web console (read-only, loopback only)
+const SERVE_USAGE = `subtrk serve — local web console (read-only, loopback only)
 
 Serves one URL, http://127.0.0.1:<port>/#<token> — the per-run random token rides
 the fragment, never argv or logs; API calls need Authorization: Bearer <token>.
 Ctrl-C stops the server. flag: --port N (default: random ephemeral port)`;
 
-const INIT_USAGE = `subt init — one-time interactive setup
+const INIT_USAGE = `subtrk init — one-time interactive setup
 
 Checks every provider, offers installs and logins where missing, and writes
-new secrets to ~/.subt/env (mode 0600 on POSIX). Secrets are never echoed.
+new secrets to ~/.subtrk/env (mode 0600 on POSIX). Secrets are never echoed.
 
 flags:
   -h, --help    this screen`;
@@ -141,7 +141,8 @@ function renderText(
     if (segs.length === 0 && r.ok) segs.push("ok");
     let line = `${r.id.padEnd(10)} ${segs.join(" · ")}`;
     if (!r.ok && r.error) {
-      if (segs.length === 0) line = `${r.id.padEnd(10)} error: ${r.error.kind} — ${oneLine(r.error.message)}${r.error.hint ? ` (${oneLine(r.error.hint)})` : ""}`;
+      if (segs.length === 0)
+        line = `${r.id.padEnd(10)} error: ${r.error.kind} — ${oneLine(r.error.message)}${r.error.hint ? ` (${oneLine(r.error.hint)})` : ""}`;
       else if (show("errors")) line += ` · error: ${r.error.kind} — ${oneLine(r.error.message)}`;
     }
     if (show("hints") && r.error?.hint) line += ` — hint: ${oneLine(r.error.hint)}`;
@@ -157,24 +158,20 @@ function renderText(
       const resetMs = Date.parse(w.resetsAt);
       if (!Number.isFinite(resetMs)) return false;
       const fetchedMs = Date.parse(provider.fetchedAt);
-      const effective = Number.isFinite(fetchedMs)
-        ? Math.max(resetMs, fetchedMs + ttl)
-        : resetMs;
+      const effective = Number.isFinite(fetchedMs) ? Math.max(resetMs, fetchedMs + ttl) : resetMs;
       return effective === next.atMs;
     });
     const kind = win ? `${win.kind} ` : "";
-    lines.push(
-      scrub(`next: ${next.providerId} ${kind}at ${clock(next.at)} (${relative(next.atMs - nowMs)})`),
-    );
+    lines.push(scrub(`next: ${next.providerId} ${kind}at ${clock(next.at)} (${relative(next.atMs - nowMs)})`));
   }
-  lines.push(scrub("help: subt status --json | subt status --provider <id> | subt init"));
+  lines.push(scrub("help: subtrk status --json | subtrk status --provider <id> | subtrk init"));
   return lines;
 }
 
 // ---------- main ----------
 
 export async function main(argv: string[], deps: CliDeps = {}): Promise<number> {
-  let parsed;
+  let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
       args: argv,
@@ -191,58 +188,69 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
       },
     });
   } catch (err) {
-    console.error(`subt: ${errorMessage(err)}`);
+    console.error(`subtrk: ${errorMessage(err)}`);
     return 2;
   }
   const positionals = parsed.positionals;
   if (positionals.length > 1) {
-    console.error(`subt: unexpected argument '${positionals[1]}' — try subt --help`);
+    console.error(`subtrk: unexpected argument '${positionals[1]}' — try subtrk --help`);
     return 2;
   }
-  const cmd = positionals[0] ?? "status"; // bare `subt` = status, never help
-  const { json, provider = [], fields, fresh, strict, port, help } = parsed.values;
+  const cmd = positionals[0] ?? "status"; // bare `subtrk` = status, never help
+  const { json, provider = [], fields, fresh, strict, port, help } = parsed.values as {
+    json?: boolean;
+    provider?: string[];
+    fields?: string;
+    fresh?: boolean;
+    strict?: boolean;
+    port?: string;
+    help?: boolean;
+  };
   if (help) {
     console.log(cmd === "init" ? INIT_USAGE : cmd === "serve" ? SERVE_USAGE : USAGE);
     return 0;
   }
   if (cmd === "init") {
     try {
-      await runInit({ subtDir: deps.dirs?.subt });
+      await runInit({ subtrkDir: deps.dirs?.subtrk });
       return 0;
     } catch (err) {
-      console.error(`subt: ${errorMessage(err)}`);
+      console.error(`subtrk: ${errorMessage(err)}`);
       return 1;
     }
   }
   if (cmd === "serve") {
     if (port !== undefined && !/^\d+$/.test(port)) {
-      console.error("subt: --port must be a non-negative integer");
+      console.error("subtrk: --port must be a non-negative integer");
       return 2;
     }
     const portNum = port === undefined ? 0 : Number(port); // 0 = random ephemeral
     if (portNum > 65535) {
-      console.error("subt: --port must be at most 65535");
+      console.error("subtrk: --port must be at most 65535");
       return 2;
     }
     try {
-      await runServe({ providers: deps.providers, subtDir: deps.dirs?.subt, port: portNum });
+      await runServe({ providers: deps.providers, subtrkDir: deps.dirs?.subtrk, port: portNum });
       return 0;
     } catch (err) {
-      console.error(`subt: ${errorMessage(err)}`);
+      console.error(`subtrk: ${errorMessage(err)}`);
       return 1;
     }
   }
   if (cmd !== "status") {
-    console.error(`subt: unknown command '${cmd}' — try subt --help`);
+    console.error(`subtrk: unknown command '${cmd}' — try subtrk --help`);
     return 2;
   }
 
   let fieldSet: Set<StatusField> | null = null;
   if (fields !== undefined) {
     fieldSet = new Set();
-    for (const f of fields.split(",").map((s) => s.trim()).filter(Boolean)) {
+    for (const f of fields
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)) {
       if (!(STATUS_FIELDS as readonly string[]).includes(f)) {
-        console.error(`subt: unknown field '${f}' — valid: ${STATUS_FIELDS.join(",")}`);
+        console.error(`subtrk: unknown field '${f}' — valid: ${STATUS_FIELDS.join(",")}`);
         return 2;
       }
       fieldSet.add(f as StatusField);
@@ -251,20 +259,20 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
 
   const badProvider = provider.find((id) => !(ALL_PROVIDER_IDS as readonly string[]).includes(id));
   if (badProvider) {
-    console.error(`subt: unknown provider '${badProvider}'`);
+    console.error(`subtrk: unknown provider '${badProvider}'`);
     return 2;
   }
 
-  let collected;
+  let collected: Awaited<ReturnType<typeof collectStatus>>;
   try {
     collected = await collectStatus({
-      subtDir: deps.dirs?.subt,
+      subtrkDir: deps.dirs?.subtrk,
       providers: deps.providers,
       requested: provider,
       fresh: fresh === true,
     });
   } catch (err) {
-    console.error(`subt: ${errorMessage(err)}`);
+    console.error(`subtrk: ${errorMessage(err)}`);
     return 1;
   }
   const { out, ttlById } = collected;
@@ -276,15 +284,14 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
 }
 
 const isDirectRun =
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(realpathSync(resolve(process.argv[1]))).href;
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(realpathSync(resolve(process.argv[1]))).href;
 if (isDirectRun) {
   main(process.argv.slice(2)).then(
     (code) => {
       process.exitCode = code;
     },
     (err) => {
-      console.error(`subt: ${errorMessage(err)}`);
+      console.error(`subtrk: ${errorMessage(err)}`);
       process.exitCode = 1;
     },
   );

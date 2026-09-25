@@ -3,9 +3,8 @@
 // alibaba verification verdict. No network, no subprocesses, no user files.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-
-import { buildRefreshBody, claudeAuth } from "../src/providers/claude.ts";
 import { classifyBlVerify } from "../src/init.ts";
+import { buildRefreshBody, claudeAuth } from "../src/providers/claude.ts";
 
 test("claude buildRefreshBody: grant_type, refresh_token, Claude Code's public client_id", () => {
   assert.deepEqual(JSON.parse(buildRefreshBody("RT-FIXTURE")), {
@@ -25,7 +24,14 @@ test("claude buildRefreshBody: deterministic, token embedded verbatim", () => {
 test("claudeAuth: expired + live refresh token -> fail carrying refreshToken (self-refreshable)", () => {
   const now = 1_800_000_000_000;
   const auth = claudeAuth(
-    { claudeAiOauth: { accessToken: "tok", expiresAt: now - 1000, refreshToken: "rt", refreshTokenExpiresAt: now + 86_400_000 } },
+    {
+      claudeAiOauth: {
+        accessToken: "tok",
+        expiresAt: now - 1000,
+        refreshToken: "rt",
+        refreshTokenExpiresAt: now + 86_400_000,
+      },
+    },
     now,
   );
   assert.ok(!auth.ok);
@@ -40,7 +46,9 @@ test("claudeAuth: absent refreshTokenExpiresAt still refreshable; dead or absent
   assert.equal(noRte.refreshToken, "rt", "within the 60s skew counts as expired but refreshable");
 
   const deadRte = claudeAuth(
-    { claudeAiOauth: { accessToken: "tok", expiresAt: now - 1000, refreshToken: "rt", refreshTokenExpiresAt: now - 1 } },
+    {
+      claudeAiOauth: { accessToken: "tok", expiresAt: now - 1000, refreshToken: "rt", refreshTokenExpiresAt: now - 1 },
+    },
     now,
   );
   assert.ok(!deadRte.ok);
@@ -52,7 +60,10 @@ test("claudeAuth: absent refreshTokenExpiresAt still refreshable; dead or absent
 });
 
 test("init classifyBlVerify: exit 0 is ok when plan data is present or stdout is not checked", () => {
-  assert.deepEqual(classifyBlVerify(0, "warning: whatever", (s) => s, '{"per5HourPercentage":22}'), { ok: true });
+  assert.deepEqual(
+    classifyBlVerify(0, "warning: whatever", (s) => s, '{"per5HourPercentage":22}'),
+    { ok: true },
+  );
 });
 
 test("init classifyBlVerify: exit 0 with empty plan data is NOT ok", () => {
