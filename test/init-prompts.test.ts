@@ -1,6 +1,6 @@
-// Regression: askHidden must leave stdin usable by later prompts. The original
-// for-await implementation destroyed stdin on break, so the question right after
-// a hidden prompt resolved immediately and init exited (seen live 2026-09-25).
+// Regression: askHidden must leave stdin usable by later prompts. A for-await
+// loop over stdin destroys the stream on break, so the question right after
+// a hidden prompt resolved immediately and init exited.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";

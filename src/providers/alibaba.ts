@@ -70,7 +70,7 @@ function dataOf(envelope: unknown): Record<string, unknown> | null {
 }
 
 // Pure: v2/usage windows. per1MonthPercentage is a RATIO of the monthly credits
-// (verified live: 0.004359 = 0.44% used); the legacy per5Hour*/per1Week* families
+// (0.004359 = 0.44% used); the legacy per5Hour*/per1Week* families
 // are whole percents and optional (intl went monthly-only 2026-09-22).
 export function parseTokenPlanUsage(envelope: unknown): Window[] {
   const d = dataOf(envelope);

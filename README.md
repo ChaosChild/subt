@@ -120,8 +120,9 @@ meantime — no intervention needed.
 
 - [`docs/spec.md`](docs/spec.md) — full CLI specification (output contract, cache,
   provider integrations, `subt init`).
-- [`docs/decisions.md`](docs/decisions.md) — decision log D1–D7 with rationale.
-- [`docs/implementation-plan.md`](docs/implementation-plan.md) — M1 plan and DoD.
+- [`docs/decisions.md`](docs/decisions.md) — design decisions D1–D8 with rationale.
+- [`docs/implementation-plan.md`](docs/implementation-plan.md) — implementation
+  guide: layout, coding rules, how to add a provider.
 - [`docs/phases.md`](docs/phases.md) — roadmap (M2 web console, M3 analytics, parked).
 
 ## License

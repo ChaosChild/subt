@@ -1,6 +1,6 @@
 # subt — Specification
 
-Version 1.0 · 2026-09-23 · Status: approved for M1
+Version 1.1
 
 `subt` is a zero-dependency CLI (TypeScript on Node ≥22.18, executed directly via type
 stripping — no build step) that reports remaining quota across paid AI subscriptions,
@@ -151,8 +151,9 @@ File `~/.subt/cache.json` (via `os.homedir()` — never manual `~` expansion):
   serve stale wait ~750ms, re-check the cache once, then probe anyway — worst case is
   one bounded duplicate probe per fan-out, never endpoint abuse.
 - **Writes:** temp file + rename, up to 4 retries with 25–100ms backoff, then **silent
-  give-up** (empirically, rename-over-an-open-reader fails EPERM on Windows even
-  Node-to-Node). A lost write costs one future re-probe; it is never an error.
+  give-up** — on Windows, rename over an open reader fails with EPERM (even
+  between Node processes). A lost write costs one future re-probe; it is never
+  an error.
 - **Stale-on-error:** a failed probe serves cached data < 24h old with `stale: true`
   **and** the structured error alongside.
 - **Hygiene:** corrupt JSON → treat as miss and delete. `schemaVersion` mismatch →
@@ -272,7 +273,7 @@ has no usage surface of its own.
 - Credits are **derived**: `remaining = total − usedPercent/100 × total`,
   `cycleEndsAt = per1MonthResetTime`, `source: "derived"`. Secondary-call failures
   degrade to fewer fields (windows without credits), never a provider error.
-- One-time auth (D2 amendment): `bl auth login --api-key sk-sp-…` first (prevents
+- One-time auth (see D2): `bl auth login --api-key sk-sp-…` first (prevents
   the console flow from auto-creating a pay-as-you-go key), then
   `bl auth login --console --console-site international` (browser). Console
   sessions expire without auto-refresh — re-run the console step when they do.
@@ -290,7 +291,7 @@ gemini client constants) and `~/.gemini/antigravity-cli/antigravity-oauth-token`
 (legacy antigravity). The `implicit/*.pb` files are encrypted trajectory data —
 never read.
 
-- Quota call (verified live, agy 1.2.11): `POST
+- Quota call (verified against agy 1.2.11): `POST
   https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` with
   `Authorization: Bearer <token>`, `User-Agent: antigravity`, body **`{}`** — no
   `ideType`, no project, no `loadCodeAssist` (that recipe belongs to the legacy
@@ -373,8 +374,6 @@ redemption, if ever un-parked).
 
 ## Not in v0 (parked)
 
-cedar_ember reset grants (read+redeem API exists; revisit) ·
+cedar_ember reset grants (read+redeem API exists; un-park when wanted) ·
 TOON serializer · statusline/agent-skill ambient context (post-M2) · `subt serve`
 dashboard (M2) · TTL/threshold config knobs.
-(Un-parked 2026-09-25: agy keyring extraction — now read via PowerShell CredRead;
-Claude OAuth self-refresh — now implemented.)
