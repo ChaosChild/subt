@@ -283,8 +283,8 @@ test("google slugify", () => {
 test("google parseGoogleSummary maps groups/buckets to scoped fraction windows (live shape)", () => {
   assert.deepEqual(parseGoogleSummary(fixture("google-summary")), [
     { kind: "5h", scope: "gemini-models", remainingFraction: 0.38, resetsAt: "2026-09-23T18:00:00.000Z" },
-    { kind: "weekly", scope: "gemini-models", remainingFraction: 0.81, resetsAt: "2026-09-28T00:00:00.000Z" },
-    { kind: "weekly", scope: "antigravity", remainingFraction: 0.64, resetsAt: "2026-09-28T00:00:00.000Z" },
+    { kind: "7d", scope: "gemini-models", remainingFraction: 0.81, resetsAt: "2026-09-28T00:00:00.000Z" },
+    { kind: "7d", scope: "antigravity", remainingFraction: 0.64, resetsAt: "2026-09-28T00:00:00.000Z" },
   ]);
 });
 
