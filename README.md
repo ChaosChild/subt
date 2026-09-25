@@ -36,7 +36,9 @@ subtrk serve
 Starts the dashboard on a random `127.0.0.1` port and prints the URL to open –
 one page for every tracked provider: usage bars per window (with ≥80%/≥95% warning
 levels), credit pools, a 7-day reset timeline, upcoming resets, and the same
-agent view the CLI prints, auto-refreshing on the cache heartbeat.
+agent view the CLI prints, auto-refreshing on the cache heartbeat. When a
+provider's error says it is refreshable, its card shows a **Refresh now** button
+that re-runs that provider's own interactive login on the host.
 
 ![Web console](docs/img/console.png)
 
@@ -79,6 +81,7 @@ No install needed – every command runs through npx:
 ```bash
 npx subtrk init     # one-time interactive setup
 npx subtrk serve    # web console
+npx subtrk auth refresh --provider <id>   # re-run one provider's interactive login (e.g. alibaba)
 npx subtrk          # same as: npx subtrk status
 ```
 
@@ -134,6 +137,9 @@ subtrk status --json
 - `providers[].error.kind` – branch on it: `no-credentials`, `expired-token`,
   `tool-missing`, `rate-limited`, `forbidden`, `not-readable-remotely`,
   `parse-failure`, `subprocess-failed`, `timeout`, `http-error`.
+- `providers[].error.remedy` – exact CLI line to run when present;
+  `refreshable: true` on a failed provider means `subtrk auth refresh
+  --provider <id>` can re-authorise it.
 - Exit codes: `0` ran (per-provider errors are in the output) · `1` CLI/runtime
   failure · `2` usage error · `3` `--strict` violation.
 - On Windows, spawn `subtrk.cmd` (or use `shell: true`) – there is no bare `.exe`.
@@ -153,7 +159,9 @@ meantime – no intervention needed.
 
 ## Security notes
 
-- `subtrk` is read-only towards vendors (no state-changing calls exist in the codebase).
+- `subtrk` is read-only towards vendors in its status probes; the one
+  deliberate exception is `subtrk auth refresh` (D9), which re-runs a
+  provider's own interactive login when asked.
 - Secrets are mechanically redacted from all output; the cache stores normalized
   quota data only. See `docs/spec.md` §Redaction.
 - `~/.subtrk/env` holds plaintext keys inside your user profile – the same trust
@@ -164,7 +172,7 @@ meantime – no intervention needed.
 
 - [`docs/spec.md`](docs/spec.md) – full CLI specification (output contract, cache,
   provider integrations, `subtrk init`).
-- [`docs/decisions.md`](docs/decisions.md) – design decisions D1–D8 with rationale.
+- [`docs/decisions.md`](docs/decisions.md) – design decisions D1–D9 with rationale.
 - [`docs/implementation-plan.md`](docs/implementation-plan.md) – implementation
   guide: layout, coding rules, how to add a provider.
 - [`docs/phases.md`](docs/phases.md) – roadmap (web console done; M3 analytics

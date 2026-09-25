@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   deriveCredits,
   extractJson,
+  mapRefreshOutcome,
   parseQuotaConfig,
   parseSubscription,
   parseTokenPlanUsage,
@@ -21,7 +22,7 @@ import {
   parseGoogleSummary,
   slugify,
 } from "../src/providers/google.ts";
-import { allProviders } from "../src/providers/index.ts";
+import { allProviders, refreshableProviders } from "../src/providers/index.ts";
 import { extractOpencodeKey } from "../src/providers/opencode.ts";
 import { parseOpenrouterCredits, parseOpenrouterKey } from "../src/providers/openrouter.ts";
 
@@ -48,6 +49,30 @@ test("allProviders exposes the six modules in spec order with spec TTLs", () => 
     google: 60000,
     opencode: 0,
     openrouter: 60000,
+  });
+});
+
+test("refreshableProviders lists exactly the modules with refresh – google stays keyring-owned", () => {
+  assert.deepEqual(refreshableProviders(), ["claude", "alibaba"]);
+  for (const id of ["google", "glm", "opencode", "openrouter"]) {
+    assert.equal(allProviders.find((p) => p.id === id)?.refresh, undefined);
+  }
+});
+
+// ---- alibaba refresh -------------------------------------------------------
+
+test("alibaba mapRefreshOutcome maps spawn outcomes to fixed literals – output never surfaces", () => {
+  assert.deepEqual(mapRefreshOutcome({ ok: true, toolMissing: false }), {
+    ok: true,
+    message: "console session re-authorised",
+  });
+  assert.deepEqual(mapRefreshOutcome({ ok: false, toolMissing: true }), {
+    ok: false,
+    message: "bl not found – install bailian-cli",
+  });
+  assert.deepEqual(mapRefreshOutcome({ ok: false, toolMissing: false }), {
+    ok: false,
+    message: "console login failed – run subtrk init",
   });
 });
 

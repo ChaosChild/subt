@@ -122,7 +122,10 @@ async function probeInner(): Promise<ProviderResult> {
   const fetchedAt = new Date().toISOString();
   const key = await getSecret("OPENROUTER_API_KEY");
   if (!key) {
-    return fail({ kind: "no-credentials", message: "OPENROUTER_API_KEY not set", hint: "run subtrk init" }, fetchedAt);
+    return fail(
+      { kind: "no-credentials", message: "OPENROUTER_API_KEY not set", hint: "run subtrk init", remedy: "subtrk init" },
+      fetchedAt,
+    );
   }
   void registerSecret(key);
 

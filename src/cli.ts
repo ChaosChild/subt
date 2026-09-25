@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-// cli.ts – subtrk entry point. `subtrk` / `subtrk status` / `subtrk init` / `subtrk serve`.
-// The providers registry lives in ./providers/index.ts (allProviders) and is
-// imported lazily (from collectStatus) so tests can inject a stub registry via
-// main()'s deps seam.
+// cli.ts – subtrk entry point. `subtrk` / `subtrk status` / `subtrk init` /
+// `subtrk auth refresh` / `subtrk serve`. The providers registry lives in
+// ./providers/index.ts (allProviders) and is imported lazily (from collectStatus)
+// so tests can inject a stub registry via main()'s deps seam.
 import { parseArgs } from "node:util";
 import {
   ALL_PROVIDER_IDS,
@@ -14,7 +14,10 @@ import {
   errorMessage,
   type ProviderModule,
   type ProviderResult,
+  readCacheEntry,
+  removeCachedProvider,
   type StatusOutput,
+  SUBTRK_DIR,
   scrub,
   scrubValue,
   type Window,
@@ -40,7 +43,8 @@ usage:
   subtrk                  same as: subtrk status
   subtrk status [flags]   probe enabled providers, compact text
   subtrk init             one-time interactive setup
-  subtrk serve            local web console (read-only, loopback only)
+  subtrk auth refresh     re-authorise one provider interactively (--provider <id>)
+  subtrk serve            local web console (loopback only)
 
 status flags:
   --json                machine-readable output (schemaVersion 1)
@@ -52,10 +56,11 @@ status flags:
 
 exit codes: 0 ran · 1 runtime failure · 2 usage error · 3 --strict violation`;
 
-const SERVE_USAGE = `subtrk serve – local web console (read-only, loopback only)
+const SERVE_USAGE = `subtrk serve – local web console (loopback only)
 
 Serves one URL, http://127.0.0.1:<port>/#<token> – the per-run random token rides
 the fragment, never argv or logs; API calls need Authorization: Bearer <token>.
+POST /api/refresh re-runs a provider's interactive login (dashboard "Refresh now").
 Ctrl-C stops the server. flag: --port N (default: random ephemeral port)`;
 
 const INIT_USAGE = `subtrk init – one-time interactive setup
@@ -192,11 +197,18 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     return 2;
   }
   const positionals = parsed.positionals;
-  if (positionals.length > 1) {
+  if (positionals[0] === "auth") {
+    // the only two-verb command: exactly "auth refresh"
+    if (positionals[1] !== "refresh" || positionals.length > 2) {
+      console.error(`subtrk: unknown command '${positionals.join(" ")}' – try subtrk --help`);
+      return 2;
+    }
+  } else if (positionals.length > 1) {
     console.error(`subtrk: unexpected argument '${positionals[1]}' – try subtrk --help`);
     return 2;
   }
-  const cmd = positionals[0] ?? "status"; // bare `subtrk` = status, never help
+  // bare `subtrk` = status, never help
+  const cmd = positionals[0] === "auth" ? "auth refresh" : (positionals[0] ?? "status");
   const {
     json,
     provider = [],
@@ -245,6 +257,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
       return 1;
     }
   }
+  if (cmd === "auth refresh") return authRefresh(provider, deps);
   if (cmd !== "status") {
     console.error(`subtrk: unknown command '${cmd}' – try subtrk --help`);
     return 2;
@@ -289,6 +302,47 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
   else for (const line of renderText(out, fieldSet, Date.now(), ttlById)) console.log(line);
 
   return strict === true && out.providers.some((r) => !r.ok) ? 3 : 0;
+}
+
+// ---------- auth refresh ----------
+
+// `subtrk auth refresh --provider <id>` – runs the provider module's interactive
+// refresh (init stays the only other interactive command) and drops the cache
+// entry on success so the next status re-probes. Result messages are fixed
+// literals from the provider modules; subprocess output is never printed.
+async function authRefresh(providerIds: string[], deps: CliDeps): Promise<number> {
+  const registry = deps.providers ?? (await import("./providers/index.ts")).allProviders;
+  if (providerIds.length !== 1) {
+    for (const m of registry) {
+      const supported = typeof m.refresh === "function" ? "interactive refresh supported" : "no interactive refresh";
+      console.error(`${m.id} – ${supported}`);
+    }
+    if (providerIds.length > 1) console.error("subtrk: auth refresh takes exactly one --provider");
+    console.error("usage: subtrk auth refresh --provider <id>");
+    return 2;
+  }
+  const id = providerIds[0];
+  const mod = (ALL_PROVIDER_IDS as readonly string[]).includes(id) ? registry.find((m) => m.id === id) : undefined;
+  if (!mod) {
+    console.error(`subtrk: unknown provider '${id}'`);
+    return 2;
+  }
+  if (typeof mod.refresh !== "function") {
+    // Name the remedy when the provider's cached error carries one, else the generic line.
+    const cached = readCacheEntry(join(deps.dirs?.subtrk ?? SUBTRK_DIR, "cache.json"), id);
+    const remedy = cached?.data.error?.remedy ?? "re-run subtrk init";
+    console.log(scrub(`${id} – no interactive refresh; ${remedy}`));
+    return 1;
+  }
+  try {
+    const r = await mod.refresh();
+    if (r.ok) removeCachedProvider(deps.dirs?.subtrk ?? SUBTRK_DIR, id);
+    console.log(scrub(`${id} – ${r.message}`));
+    return r.ok ? 0 : 1;
+  } catch (err) {
+    console.error(`subtrk: ${errorMessage(err)}`);
+    return 1;
+  }
 }
 
 const isDirectRun =

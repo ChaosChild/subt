@@ -174,6 +174,7 @@ async function probeInner(): Promise<ProviderResult> {
           ? "~/.zcode/cli/config.json unreadable and no ANTHROPIC_AUTH_TOKEN set"
           : "no provider.zai.apiKey in ~/.zcode/cli/config.json and no ANTHROPIC_AUTH_TOKEN set",
         hint: "check ZCode login",
+        remedy: "subtrk init",
       },
       fetchedAt,
     );

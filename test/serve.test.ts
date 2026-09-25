@@ -2,7 +2,7 @@
 // absence. Every request targets our own listening socket on 127.0.0.1 – no
 // other network. Stub providers ride the same deps seam as the CLI tests.
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { type IncomingHttpHeaders, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -201,5 +201,151 @@ describe("subtrk serve", () => {
       assert.equal(del.status, 405);
       for (const r of [miss, post, del]) noCors(r.headers);
     });
+  });
+});
+
+describe("POST /api/refresh", () => {
+  const seedCache = (subtrkDir: string): void => {
+    writeFileSync(
+      join(subtrkDir, "cache.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        claude: {
+          data: {
+            id: "claude",
+            ok: false,
+            stale: false,
+            fetchedAt: new Date().toISOString(),
+            error: { kind: "no-credentials", message: "stale" },
+          },
+          fetchedAt: Date.now(),
+          ttlMs: 300_000,
+        },
+      }),
+    );
+  };
+
+  it("401 without a token; no refresh dep is called", async () => {
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    let called = 0;
+    await withServer(
+      {
+        subtrkDir,
+        refresh: async () => {
+          called += 1;
+          return { ok: true, message: "x" };
+        },
+      },
+      async (h) => {
+        const r = await get(h.port, "/api/refresh?provider=claude", { method: "POST" });
+        assert.equal(r.status, 401);
+        assert.deepEqual(JSON.parse(r.body), { error: "unauthorized" });
+        assert.equal(called, 0);
+        noCors(r.headers);
+      },
+    );
+  });
+
+  it("GET → 405 with allow: POST", async () => {
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    await withServer({ subtrkDir, refresh: async () => ({ ok: true, message: "x" }) }, async (h) => {
+      const r = await get(h.port, "/api/refresh?provider=claude", {
+        headers: { authorization: `Bearer ${h.token}` },
+      });
+      assert.equal(r.status, 405);
+      assert.equal(r.headers.allow, "POST");
+      assert.deepEqual(JSON.parse(r.body), { error: "method not allowed" });
+      noCors(r.headers);
+    });
+  });
+
+  it("unknown or non-refreshable provider → 400", async () => {
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    await withServer({ subtrkDir, refresh: async () => ({ ok: true, message: "x" }) }, async (h) => {
+      for (const id of ["openrouter", "nope"]) {
+        const r = await get(h.port, `/api/refresh?provider=${id}`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${h.token}` },
+        });
+        assert.equal(r.status, 400);
+        assert.deepEqual(JSON.parse(r.body), { error: "unknown or non-refreshable provider" });
+        noCors(r.headers);
+      }
+    });
+  });
+
+  it("happy path: 200 ok:true, fixed message, status cache entry dropped", async () => {
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    seedCache(subtrkDir);
+    let seen = "";
+    await withServer(
+      {
+        subtrkDir,
+        refresh: async (id) => {
+          seen = id;
+          return { ok: true, message: "console session re-authorised" };
+        },
+      },
+      async (h) => {
+        const r = await get(h.port, "/api/refresh?provider=claude", {
+          method: "POST",
+          headers: { authorization: `Bearer ${h.token}` },
+        });
+        assert.equal(r.status, 200);
+        assert.deepEqual(JSON.parse(r.body), { ok: true, message: "console session re-authorised" });
+        assert.equal(seen, "claude");
+        const cache = JSON.parse(readFileSync(join(subtrkDir, "cache.json"), "utf8"));
+        assert.ok(!("claude" in cache), "successful refresh must drop the cache entry");
+        noCors(r.headers);
+      },
+    );
+  });
+
+  it("second request while one is in flight → 409, first still completes", async () => {
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    await withServer(
+      {
+        subtrkDir,
+        refresh: () => gate.then(() => ({ ok: true, message: "done" })),
+      },
+      async (h) => {
+        const headers = { authorization: `Bearer ${h.token}` };
+        const first = get(h.port, "/api/refresh?provider=claude", { method: "POST", headers });
+        await new Promise((r) => setTimeout(r, 75));
+        const second = await get(h.port, "/api/refresh?provider=claude", { method: "POST", headers });
+        assert.equal(second.status, 409);
+        assert.deepEqual(JSON.parse(second.body), { error: "refresh already running" });
+        release();
+        const done = await first;
+        assert.equal(done.status, 200);
+        assert.deepEqual(JSON.parse(done.body), { ok: true, message: "done" });
+      },
+    );
+  });
+
+  it("ok:false outcome → still 200, body carries the failure, cache entry kept", async () => {
+    const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
+    seedCache(subtrkDir);
+    await withServer(
+      {
+        subtrkDir,
+        refresh: async () => ({ ok: false, message: "console login failed – run subtrk init" }),
+      },
+      async (h) => {
+        const r = await get(h.port, "/api/refresh?provider=claude", {
+          method: "POST",
+          headers: { authorization: `Bearer ${h.token}` },
+        });
+        assert.equal(r.status, 200);
+        assert.deepEqual(JSON.parse(r.body), { ok: false, message: "console login failed – run subtrk init" });
+        const cache = JSON.parse(readFileSync(join(subtrkDir, "cache.json"), "utf8"));
+        assert.ok("claude" in cache, "failed refresh must keep the cache entry");
+        noCors(r.headers);
+      },
+    );
   });
 });
