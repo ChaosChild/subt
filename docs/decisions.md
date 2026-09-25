@@ -69,9 +69,10 @@ parser; real process env still wins as an override):
 
 - `OPENROUTER_API_KEY`, `OPENROUTER_MANAGEMENT_KEY` – prompted (hidden input)
 - optional `OPENCODE_API_KEY`
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ANTIGRAVITY_CLIENT_ID` – public
-  installed-app constants, fetched from upstream sources by init (no literals
-  in this repo, so secret scanners stay quiet)
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ANTIGRAVITY_CLIENT_ID`,
+  `ANTIGRAVITY_CLIENT_SECRET` – public installed-app constants, fetched from
+  upstream sources by init (no literals in this repo, so secret scanners stay
+  quiet)
 
 `subtrk init` runs the Alibaba login flow, prompts for the keys above, checks
 every provider's credential presence, and reports what is missing with honest
@@ -80,17 +81,25 @@ is non-interactive. Accepted trade-off: plaintext values inside the user
 profile – the same trust envelope as the vendor credential files subtrk reads;
 the profile's per-user ACL is the boundary.
 
-## D7 · Google – read agy's Credential Manager token, call the summary endpoint
+## D7 · Google – read the CLIProxyAPI auth file or agy's keyring token, self-refresh read-only
 
-Consumer Gemini CLI service ended 2026-06-18; consumer accounts use the
-closed-source `agy` binary. Its OAuth token (access **and** refresh) is a
-plaintext JSON blob in Windows Credential Manager, target `gemini:antigravity`
-– read zero-dependency via a fixed-literal PowerShell `CredReadW` script
-spawned with `execFile`. Fallbacks: the legacy `~/.gemini/oauth_creds.json`
-and `~/.gemini/antigravity-cli/antigravity-oauth-token` files (refresh needs
-the D6 env constants; the agy keyring path never self-refreshes – agy owns
-refresh and rewrites the credential in place, so on 401 re-read once and
-retry).
+Consumer Gemini CLI service ended 2026-06-18; consumer accounts authenticate
+through the closed-source `agy` binary or CLIProxyAPI, both holding an
+Antigravity OAuth login. subtrk reads the first credential it finds: the
+cross-platform CLIProxyAPI auth files (`~/.cli-proxy-api/antigravity*.json` –
+filenames may carry the account email, which is never logged), then agy's
+plaintext JSON blob in Windows Credential Manager (target `gemini:antigravity`,
+read zero-dependency via a fixed-literal PowerShell `CredReadW` script spawned
+with `execFile`), then the legacy `~/.gemini/*` files.
+
+Both primary stores keep a long-lived refresh token, and Google's refresh tokens
+are **non-rotating** (verified live 2026-09-25). subtrk therefore mints access
+tokens itself – `POST oauth2.googleapis.com/token` with the PUBLIC Antigravity
+client constants (CLIProxyAPI ships them in its MIT source; init fetches them
+into `~/.subtrk/env`). The minted token stays a local variable for the quota
+call and **nothing is ever written back to either store** – read-only refresh,
+and `agy` does not need to be running. The legacy gemini lineage keeps its
+write-back refresh; the legacy antigravity file refreshes without write-back.
 
 Quota call: `POST cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`
 with `User-Agent: antigravity` and body `{}` – no `ideType`, no project, no
@@ -130,6 +139,7 @@ answers only fixed literals, the provider allowlist rejects non-refreshable
 ids with 400, single-flight per provider returns 409 on overlap, and the
 loopback binding, host allowlist, CSP and no-CORS posture are unchanged. A
 successful refresh drops the provider's cache entry so the next status
-re-probes. Google is deliberately not refreshable – keyring tokens stay
-agy-owned (D7) – and errors that a non-refreshable provider emits carry a
-`remedy` line naming the fix instead.
+re-probes. Google is refreshable too (D7): its refresh re-mints the access
+token read-only from the stored non-rotating refresh token. Providers without
+interactive refresh emit errors that carry a `remedy` line naming the fix
+instead.
