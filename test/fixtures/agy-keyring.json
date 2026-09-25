@@ -1,0 +1,10 @@
+{
+  "token": {
+    "access_token": "ya29.example-access-token",
+    "token_type": "Bearer",
+    "refresh_token": "1//example-refresh-token",
+    "expiry": "2026-09-25T12:00:00.000Z"
+  },
+  "auth_method": "oauth-web",
+  "id_token": "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJmYWtlLXN1YmplY3QifQ.example-signature"
+}

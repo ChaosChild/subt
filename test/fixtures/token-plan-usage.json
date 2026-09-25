@@ -1,0 +1,17 @@
+{
+  "code": "200",
+  "data": {
+    "DataV2": {
+      "ret": ["SUCCESS::接口调用成功"],
+      "data": {
+        "msg": "Success.",
+        "code": "SUCCESS",
+        "success": true,
+        "data": {
+          "per1MonthPercentage": 0.10140047797334222,
+          "per1MonthResetTime": 1792684800000
+        }
+      }
+    }
+  }
+}

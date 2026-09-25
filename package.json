@@ -1,0 +1,26 @@
+{
+  "name": "subt-cli",
+  "version": "0.1.0",
+  "description": "One command for all your AI subscription quotas — agent-first usage tracking across Claude, GLM, Alibaba, Google, OpenCode Zen and OpenRouter",
+  "bin": {
+    "subt": "./src/cli.ts"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "private": true,
+  "scripts": {
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "author": "ChaosChild",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChaosChild/subt.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ChaosChild/subt/issues"
+  },
+  "homepage": "https://github.com/ChaosChild/subt#readme"
+}

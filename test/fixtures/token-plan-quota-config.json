@@ -1,0 +1,12 @@
+{
+  "msg": "Success.",
+  "code": "SUCCESS",
+  "success": true,
+  "data": {
+    "lite": { "five_hour": 700, "monthly": 11500 },
+    "essential": { "five_hour": 1800, "monthly": 25500 },
+    "standard": { "five_hour": 3000, "monthly": 45000 },
+    "pro": { "five_hour": 12000, "monthly": 180000 },
+    "addon_quota": { "extrabundle": 20000 }
+  }
+}

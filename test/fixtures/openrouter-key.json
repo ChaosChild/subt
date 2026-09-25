@@ -1,0 +1,10 @@
+{
+  "data": {
+    "label": "subt",
+    "usage": 12.34,
+    "limit": null,
+    "is_free_tier": false,
+    "rate_limit": { "requests": 20, "interval": "10s" },
+    "usage_daily": 1.2
+  }
+}

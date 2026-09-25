@@ -1,0 +1,11 @@
+{
+  "msg": "Success.",
+  "code": "SUCCESS",
+  "success": true,
+  "data": {
+    "per5HourPercentage": 22,
+    "per5HourResetTime": 1780577831989,
+    "per1WeekPercentage": 47,
+    "per1WeekResetTime": 1780651431995
+  }
+}

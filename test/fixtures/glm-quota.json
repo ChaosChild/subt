@@ -1,0 +1,12 @@
+{
+  "code": 200,
+  "msg": "ok",
+  "data": {
+    "level": "Legacy 2 Max",
+    "limits": [
+      { "type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 4, "nextResetTime": 1789549620000 },
+      { "type": "TOKENS_LIMIT", "unit": 6, "number": 1, "percentage": 61, "nextResetTime": 1790054400000 },
+      { "type": "TIME_LIMIT", "unit": 4, "number": 1, "percentage": 12, "nextResetTime": 1789500000000 }
+    ]
+  }
+}

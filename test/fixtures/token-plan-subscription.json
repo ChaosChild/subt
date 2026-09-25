@@ -1,0 +1,12 @@
+{
+  "msg": "Success.",
+  "code": "SUCCESS",
+  "success": true,
+  "data": {
+    "instanceCode": "sfm_tokenplansolo_public_intl-sg-fixture",
+    "specCode": "standard",
+    "remainingDays": 345,
+    "status": "VALID",
+    "autoRenewFlag": false
+  }
+}

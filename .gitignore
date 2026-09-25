@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.cavet/
+.DS_Store
+Thumbs.db
+subt-tmp.json
