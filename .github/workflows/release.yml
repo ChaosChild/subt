@@ -22,6 +22,8 @@ jobs:
           node-version: 22
           cache: npm
           registry-url: "https://registry.npmjs.org"
+      # Node 22 bundles npm 10.x; trusted publishing needs npm >= 11.5.1
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm run typecheck
       - run: npx biome ci .
