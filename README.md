@@ -38,7 +38,7 @@ one page for every tracked provider: usage bars per window (with ≥80%/≥95% w
 levels), credit pools, a 7-day reset timeline, upcoming resets, and the same
 agent view the CLI prints, auto-refreshing on the cache heartbeat. When a
 provider's error says it is refreshable, its card shows a **Refresh now** button
-that re-runs that provider's own interactive login on the host.
+that re-runs that provider's own refresh action on the host.
 
 ![Web console](docs/img/console.png)
 
@@ -81,7 +81,7 @@ No install needed – every command runs through npx:
 ```bash
 npx subtrk init     # one-time interactive setup
 npx subtrk serve    # web console
-npx subtrk auth refresh --provider <id>   # re-run one provider's interactive login (e.g. alibaba)
+npx subtrk auth refresh --provider <id>   # re-authorise one provider (e.g. alibaba or google)
 npx subtrk          # same as: npx subtrk status
 ```
 
@@ -113,7 +113,7 @@ keys (hidden input, saved to `~/.subtrk/env`), and verifies each provider honest
 | Anthropic | Claude Pro (personal) | `api.anthropic.com/api/oauth/usage` via the OAuth token Claude Code already stores | 5h + 7d | reverse-engineered, de-facto standard |
 | Z.ai | GLM Coding Plan | the same monitor endpoint ZCode itself uses | 5h + weekly | unofficial, officially plugin-endorsed |
 | Alibaba Cloud | Model Studio Token Plan (intl) | official `bl` CLI raw gateway passthrough (`bl console call`) | 30-day credits pool (monthly-only since 2026-09-22) | official (via bl) |
-| Google | AI Pro (personal) | agy's Credential Manager token → Code Assist quota summary (body `{}`, UA `antigravity`) | per-family 5h/weekly (gemini + claude-and-gpt families) | best-effort – degrades to `agy /usage` |
+| Google | AI Pro (personal) | CLIProxyAPI auth file (`~/.cli-proxy-api`) or agy's Credential Manager token → Code Assist quota summary (body `{}`, UA `antigravity`); read-only self-refresh | per-family 5h/weekly (gemini + claude-and-gpt families) | best-effort – degrades to `agy /usage` |
 | OpenCode | Zen pay-as-you-go | no usage/balance API exists for PAYG | – | signals only (honest note) |
 | OpenRouter | pay-as-you-go | `/api/v1/key` (+ `/api/v1/credits` with a management key) | – | official |
 
@@ -155,7 +155,7 @@ meantime – no intervention needed.
   `OPENCODE_API_KEY` (dotenv format; process env wins). Written by `subtrk init`.
 - Everything else is read from the credential files your CLIs already own:
   `~/.claude/.credentials.json`, `~/.zcode/cli/config.json`, `~/.gemini/*`,
-  `~/.local/share/opencode/auth.json`, `bl`'s own store.
+  `~/.cli-proxy-api/*`, `~/.local/share/opencode/auth.json`, `bl`'s own store.
 
 ## Security notes
 

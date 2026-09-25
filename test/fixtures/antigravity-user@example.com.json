@@ -1,0 +1,11 @@
+{
+  "type": "antigravity",
+  "access_token": "ya29.example-access-token",
+  "refresh_token": "1//example-refresh-token",
+  "expires_in": 3599,
+  "timestamp": 1789500000000,
+  "expired": "2026-09-25T12:00:00.000Z",
+  "email": "user@example.com",
+  "project_id": "sample-project",
+  "disabled": false
+}

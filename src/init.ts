@@ -2,7 +2,7 @@
 // Checks every tracked provider, offers installs/logins, writes new secrets to
 // ~/.subtrk/env (mode 0600 on POSIX). Secrets are never echoed.
 import { execFile, spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -237,10 +237,11 @@ function hasAgyKeyring(): Promise<boolean> {
   });
 }
 
-// The Google OAuth client values are PUBLIC installed-app constants (Google
-// publishes them in gemini-cli's Apache-2.0 source; Google's OAuth docs treat
-// installed-app secrets as non-confidential). Fetch from upstream so no literal
-// lives in this repo – secret scanners stay quiet and values stay current.
+// The Google OAuth client values are PUBLIC constants – Google publishes the
+// gemini pair in gemini-cli's Apache-2.0 source, and the Antigravity pair ships in
+// CLIProxyAPI's MIT source (its confidential client constants are public). Fetch
+// from upstream so no literal lives in this repo – secret scanners stay quiet and
+// values stay current.
 async function fetchGoogleClientConstants(): Promise<Record<string, string> | null> {
   const get = async (url: string): Promise<string> => {
     const ac = new AbortController();
@@ -261,11 +262,19 @@ async function fetchGoogleClientConstants(): Promise<Record<string, string> | nu
   const id = geminiSrc.match(/\d{6,}-[a-z0-9.-]+\.apps\.googleusercontent\.com/)?.[0];
   const secret = geminiSrc.match(/GOCSPX-[A-Za-z0-9_-]+/)?.[0];
   const agySrc = await get(
-    "https://raw.githubusercontent.com/georgewhewell/quota-exporter/HEAD/src/llm_quota_exporter/providers/gemini.py",
+    "https://raw.githubusercontent.com/router-for-me/CLIProxyAPI/main/internal/auth/antigravity/constants.go",
   );
   const agyId = agySrc.match(/\d{6,}-[a-z0-9.-]+\.apps\.googleusercontent\.com/)?.[0];
-  if (!id || !secret || !agyId || agyId === id) return null;
-  return { GOOGLE_CLIENT_ID: id, GOOGLE_CLIENT_SECRET: secret, ANTIGRAVITY_CLIENT_ID: agyId };
+  const agySecret = agySrc.match(/GOCSPX-[A-Za-z0-9_-]+/)?.[0];
+  // Sanity: the antigravity pair must be complete and differ from the gemini client
+  // (the quota-exporter id this check replaces turned out to be the wrong client).
+  if (!id || !secret || !agyId || !agySecret || agyId === id) return null;
+  return {
+    GOOGLE_CLIENT_ID: id,
+    GOOGLE_CLIENT_SECRET: secret,
+    ANTIGRAVITY_CLIENT_ID: agyId,
+    ANTIGRAVITY_CLIENT_SECRET: agySecret,
+  };
 }
 
 export async function runInit(opts: InitOpts = {}): Promise<void> {
@@ -391,42 +400,54 @@ export async function runInit(opts: InitOpts = {}): Promise<void> {
     console.log("[missing] alibaba – bl not installed");
   }
 
-  // 4. Google: file lineages, else (win32) agy's keyring target via cmdkey.
+  // 4. Google: CLIProxyAPI auth file, legacy file lineages, else (win32) agy's
+  //    keyring target via cmdkey. Only the presence of a file is checked here –
+  //    the same first-match order the probe uses decides which store wins.
+  let googleCliproxy = false;
+  try {
+    googleCliproxy = readdirSync(join(homedir(), ".cli-proxy-api"), "utf8").some((n) =>
+      /^antigravity.*\.json$/.test(n),
+    );
+  } catch {
+    // no ~/.cli-proxy-api – not a CLIProxyAPI host
+  }
   const googleFile =
     existsSync(join(homedir(), ".gemini", "oauth_creds.json")) ||
     existsSync(join(homedir(), ".gemini", "antigravity-cli", "antigravity-oauth-token"));
   let googleKeyring = false;
-  if (!googleFile && process.platform === "win32") googleKeyring = await hasAgyKeyring();
-  if (googleFile || googleKeyring) {
-    console.log("[ok]      google – agy credential found");
+  if (!googleCliproxy && !googleFile && process.platform === "win32") googleKeyring = await hasAgyKeyring();
+  if (googleCliproxy || googleFile || googleKeyring) {
+    console.log("[ok]      google – credential found (CLIProxyAPI auth file, agy keyring, or legacy gemini files)");
   } else {
-    missing.push("google – install agy and launch it once to log in");
+    missing.push("google – log in once with agy (or CLIProxyAPI), then re-run subtrk init");
     console.log("[missing] google – no credential found");
     console.log(
-      "          install agy: irm https://antigravity.google/cli/install.ps1 | iex – then launch it once to log in (subtrk reads its Credential Manager token directly)",
+      "          install agy: irm https://antigravity.google/cli/install.ps1 | iex – then launch it once to log in; or log in once with CLIProxyAPI (subtrk reads either store directly)",
     );
   }
-  // Legacy gemini/antigravity token refresh needs the public OAuth client
-  // constants; they live in ~/.subtrk/env (not in the repo). Only relevant when a
-  // legacy file credential exists – the agy keyring path never refreshes.
-  if (googleFile) {
-    const have = {
-      id: getSecret("GOOGLE_CLIENT_ID", envPath),
-      secret: getSecret("GOOGLE_CLIENT_SECRET", envPath),
-      agyId: getSecret("ANTIGRAVITY_CLIENT_ID", envPath),
-    };
-    if (!have.id || !have.secret || !have.agyId) {
-      const fetched = await fetchGoogleClientConstants();
-      if (fetched) {
-        updateEnvFile(envPath, fetched);
-        console.log("[ok]      google – OAuth client constants fetched from upstream into ~/.subtrk/env");
-      } else {
-        console.log("[note]    google – could not fetch OAuth client constants");
-        console.log(
-          "          legacy token refresh needs GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ANTIGRAVITY_CLIENT_ID in ~/.subtrk/env",
-        );
-        console.log("          (public values – see gemini-cli's packages/core/src/code_assist/oauth2.ts)");
-      }
+  // Google token refresh needs the public OAuth client constants; they live in
+  // ~/.subtrk/env (not in the repo). The Antigravity pair powers every lineage's
+  // self-refresh (cliproxy, keyring, legacy antigravity) so it is always written;
+  // the gemini pair only matters when a legacy gemini file credential exists.
+  const have = {
+    id: getSecret("GOOGLE_CLIENT_ID", envPath),
+    secret: getSecret("GOOGLE_CLIENT_SECRET", envPath),
+    agyId: getSecret("ANTIGRAVITY_CLIENT_ID", envPath),
+    agySecret: getSecret("ANTIGRAVITY_CLIENT_SECRET", envPath),
+  };
+  if ((googleFile && (!have.id || !have.secret)) || !have.agyId || !have.agySecret) {
+    const fetched = await fetchGoogleClientConstants();
+    if (fetched) {
+      updateEnvFile(envPath, fetched);
+      console.log("[ok]      google – OAuth client constants fetched from upstream into ~/.subtrk/env");
+    } else {
+      console.log("[note]    google – could not fetch OAuth client constants");
+      console.log(
+        "          token refresh needs GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ANTIGRAVITY_CLIENT_ID / ANTIGRAVITY_CLIENT_SECRET in ~/.subtrk/env",
+      );
+      console.log(
+        "          (public values – gemini-cli's packages/core/src/code_assist/oauth2.ts and CLIProxyAPI's internal/auth/antigravity/constants.go)",
+      );
     }
   }
 

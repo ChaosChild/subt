@@ -15,12 +15,17 @@ import {
 import { claudeAuth, parseClaudeUsage } from "../src/providers/claude.ts";
 import { glmAuth, parseGlmQuota } from "../src/providers/glm.ts";
 import {
+  ANTIGRAVITY_CONSTANTS_MISSING,
+  buildAntigravityRefreshForm,
   googleExpired,
-  googlePreFlight,
+  mapGrantFailure,
+  needsRefresh,
   parseAgyKeyringBlob,
   parseAntigravityTokenFile,
+  parseCliproxyAuthFile,
   parseGeminiCreds,
   parseGoogleSummary,
+  parseMintResponse,
   slugify,
 } from "../src/providers/google.ts";
 import { allProviders, refreshableProviders } from "../src/providers/index.ts";
@@ -53,9 +58,9 @@ test("allProviders exposes the six modules in spec order with spec TTLs", () => 
   });
 });
 
-test("refreshableProviders lists exactly the modules with refresh – google stays keyring-owned", () => {
-  assert.deepEqual(refreshableProviders(), ["claude", "alibaba"]);
-  for (const id of ["google", "glm", "opencode", "openrouter"]) {
+test("refreshableProviders lists exactly the modules with refresh – google self-refreshes read-only", () => {
+  assert.deepEqual(refreshableProviders(), ["claude", "alibaba", "google"]);
+  for (const id of ["glm", "opencode", "openrouter"]) {
     assert.equal(allProviders.find((p) => p.id === id)?.refresh, undefined);
   }
 });
@@ -347,17 +352,112 @@ test("google googleExpired honours the 60s skew and unknown expiry", () => {
   assert.equal(googleExpired({ accessToken: "t", lineage: "gemini" }, now), false);
 });
 
-test("google googlePreFlight: expired keyring creds fail fast, future or absent expiry passes", () => {
-  const now = 1_800_000_000_000;
-  const expired = googlePreFlight({ accessToken: "t", lineage: "agy-keyring", expiresAtMs: now - 1000 }, now);
-  assert.ok(expired);
-  assert.equal(expired.kind, "expired-token");
-  assert.equal(expired.message, "token rejected (401, also after one credential re-read)");
-  assert.equal(expired.hint, "launch agy once so it refreshes its token, then re-run");
-  assert.equal(expired.remedy, "re-login inside agy");
+test("google parseCliproxyAuthFile extracts the CLIProxyAPI auth file fields (raw kept for nothing)", () => {
+  const parsed = parseCliproxyAuthFile(fixture("antigravity-user@example.com"));
+  assert.deepEqual(parsed, {
+    accessToken: "ya29.example-access-token",
+    refreshToken: "1//example-refresh-token",
+    expiresAtMs: Date.parse("2026-09-25T12:00:00.000Z"),
+    lineage: "cliproxy",
+  });
+  assert.equal("raw" in (parsed ?? {}), false, "no write-back target – the raw JSON is dropped");
+  assert.deepEqual(parseCliproxyAuthFile({ type: "antigravity", refresh_token: "RT" }), {
+    refreshToken: "RT",
+    lineage: "cliproxy",
+  });
+  assert.deepEqual(parseCliproxyAuthFile({ type: "antigravity", refresh_token: "RT", expired: "not-a-date" }), {
+    refreshToken: "RT",
+    lineage: "cliproxy",
+  });
+});
 
-  assert.equal(googlePreFlight({ accessToken: "t", lineage: "agy-keyring", expiresAtMs: now + 120_000 }, now), null);
-  assert.equal(googlePreFlight({ accessToken: "t", lineage: "agy-keyring" }, now), null);
+test("google parseCliproxyAuthFile rejects other types, missing refresh tokens and junk", () => {
+  assert.equal(parseCliproxyAuthFile({ type: "gemini", refresh_token: "RT" }), null);
+  assert.equal(parseCliproxyAuthFile({ type: "antigravity" }), null);
+  assert.equal(parseCliproxyAuthFile({ type: "antigravity", refresh_token: "" }), null);
+  assert.equal(parseCliproxyAuthFile({ type: "antigravity", refresh_token: 5 }), null);
+  assert.equal(
+    parseCliproxyAuthFile({ type: "antigravity", refresh_token: "RT", access_token: "" })?.refreshToken,
+    "RT",
+    "empty access_token is simply absent, the file still parses",
+  );
+  assert.equal(parseCliproxyAuthFile({}), null);
+  assert.equal(parseCliproxyAuthFile("nope"), null);
+});
+
+test("google needsRefresh: absent token, past expiry and the 5-minute window all mint; fresh does not", () => {
+  const now = 1_800_000_000_000;
+  assert.equal(needsRefresh({ lineage: "cliproxy", refreshToken: "RT" }, now), true, "no access token -> mint");
+  assert.equal(
+    needsRefresh({ lineage: "cliproxy", refreshToken: "RT", accessToken: "AT", expiresAtMs: now - 1000 }, now),
+    true,
+    "expired -> mint",
+  );
+  assert.equal(
+    needsRefresh({ lineage: "cliproxy", refreshToken: "RT", accessToken: "AT", expiresAtMs: now + 100_000 }, now),
+    true,
+    "inside the 5-minute safety window -> mint",
+  );
+  assert.equal(
+    needsRefresh({ lineage: "cliproxy", refreshToken: "RT", accessToken: "AT", expiresAtMs: now + 400_000 }, now),
+    false,
+    "fresh beyond the window -> use the stored token",
+  );
+  assert.equal(
+    needsRefresh({ lineage: "agy-keyring", accessToken: "AT" }, now),
+    false,
+    "unknown expiry counts as fresh",
+  );
+});
+
+test("google ANTIGRAVITY_CONSTANTS_MISSING fails fast with the init remedy", () => {
+  assert.deepEqual(ANTIGRAVITY_CONSTANTS_MISSING, {
+    kind: "no-credentials",
+    message: "antigravity client constants missing",
+    hint: "run subtrk init (fetches the public values)",
+    remedy: "subtrk init",
+  });
+});
+
+test("google mapGrantFailure: 400/401 and invalid_grant mean re-login, other outcomes pass through", () => {
+  for (const [status, code] of [
+    [400, ""],
+    [401, ""],
+    [400, "invalid_grant"],
+    [undefined, "invalid_grant"],
+  ] as const) {
+    const err = mapGrantFailure(status, code);
+    assert.equal(err.kind, "expired-token");
+    assert.equal(err.message, "refresh token rejected by Google");
+    assert.equal(err.hint, "the stored login was revoked – re-login once");
+    assert.equal(err.remedy, "re-login inside agy (or CLIProxyAPI)");
+  }
+  assert.equal(mapGrantFailure(503, "").kind, "http-error");
+  assert.equal(mapGrantFailure(undefined, "").kind, "http-error");
+  assert.equal(mapGrantFailure(503, "").message, "HTTP 503");
+});
+
+test("google buildAntigravityRefreshForm: confidential grant carrying both client constants", () => {
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(buildAntigravityRefreshForm("RT", "ID", "SEC"))), {
+    grant_type: "refresh_token",
+    refresh_token: "RT",
+    client_id: "ID",
+    client_secret: "SEC",
+  });
+});
+
+test("google parseMintResponse: access token + expires_in -> mint window; junk is a parse failure", () => {
+  const now = 1_800_000_000_000;
+  assert.deepEqual(parseMintResponse('{"access_token":"AT2","expires_in":3599}', now), {
+    ok: true,
+    accessToken: "AT2",
+    expiresAtMs: now + 3_599_000,
+  });
+  assert.equal(parseMintResponse("not json", now).ok, false);
+  assert.equal(parseMintResponse('{"expires_in":3599}', now).ok, false);
+  assert.equal(parseMintResponse('{"access_token":"","expires_in":3599}', now).ok, false);
+  assert.equal(parseMintResponse('{"access_token":"AT"}', now).ok, false);
+  assert.equal(parseMintResponse('{"access_token":"AT","expires_in":"3600"}', now).ok, false);
 });
 
 // ---- opencode --------------------------------------------------------------

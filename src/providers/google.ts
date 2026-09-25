@@ -1,17 +1,26 @@
 // google – Google AI Pro, best-effort. Credential discovery order:
-//   1. Windows Credential Manager generic credential "gemini:antigravity" (agy's OAuth
+//   1. ~/.cli-proxy-api/antigravity*.json (CLIProxyAPI auth files) – cross-platform,
+//      so tried first; the filename may carry the account email, which is never
+//      logged or surfaced.
+//   2. Windows Credential Manager generic credential "gemini:antigravity" (agy's OAuth
 //      blob, UTF-8 JSON) – read with a FIXED literal PowerShell P/Invoke script, win32 only.
-//   2. ~/.gemini/oauth_creds.json (legacy gemini: access_token, refresh_token,
+//   3. ~/.gemini/oauth_creds.json (legacy gemini: access_token, refresh_token,
 //      expiry_date ms) – expired tokens are refreshed and written back to the same file.
-//   3. ~/.gemini/antigravity-cli/antigravity-oauth-token (legacy antigravity).
+//   4. ~/.gemini/antigravity-cli/antigravity-oauth-token (legacy antigravity).
 // The implicit/*.pb files under antigravity-cli are encrypted trajectory data – never read.
 // Quota: POST /v1internal:retrieveUserQuotaSummary with an EMPTY {} body (the request
-// proto has no other fields; unknown fields 400). No loadCodeAssist step. agy owns
-// token refresh: on 401 the credential is re-read once (agy refreshes the keyring blob
-// in place while running) and the call retried once – subtrk never refreshes keyring tokens.
+// proto has no other fields; unknown fields 400). No loadCodeAssist step.
+// The cliproxy and agy-keyring lineages self-refresh: the stored refresh token mints
+// access tokens via the PUBLIC Antigravity client constants from ~/.subtrk/env.
+// Google's refresh tokens are non-rotating (verified 2026-09-25) – the minted token
+// lives in a local variable for the quota call only and nothing is ever written back
+// to either store. Read-only refresh: agy does not need to be running. On quota 401
+// the credential is re-read once (agy/CLIProxyAPI refresh their stores in place while
+// running) and the call retried once. Legacy gemini/antigravity file lineages keep
+// their own refresh (write-back for the gemini lineage only).
 
 import { execFile } from "node:child_process";
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ProviderError, ProviderModule, ProviderResult, Window } from "../core.ts";
@@ -20,15 +29,18 @@ const TIMEOUT_MS = 10_000;
 const KEYRING_TIMEOUT_MS = 5_000; // Add-Type compile is slow on its first run
 const MAX_RESPONSE_CHARS = 1_000_000;
 const SKEW_MS = 60_000;
+// Expired or inside this window -> mint a fresh access token. CLIProxyAPI uses
+// the same 5-minute safety window for its own refresh decision.
+const REFRESH_WINDOW_MS = 5 * 60_000;
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const PRIMARY_HOST = "https://cloudcode-pa.googleapis.com";
 const FALLBACK_HOST = "https://daily-cloudcode-pa.googleapis.com";
 const QUOTA_PATH = "/v1internal:retrieveUserQuotaSummary";
 
-// The OAuth client constants for legacy file-lineage refresh live in ~/.subtrk/env
-// (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ANTIGRAVITY_CLIENT_ID). They are
-// PUBLIC installed-app values – `subtrk init` fetches them from upstream sources
-// – kept out of this repo so secret scanners stay quiet.
+// The OAuth client constants for token refresh live in ~/.subtrk/env
+// (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ANTIGRAVITY_CLIENT_ID /
+// ANTIGRAVITY_CLIENT_SECRET). They are PUBLIC values – `subtrk init` fetches them
+// from upstream sources – kept out of this repo so secret scanners stay quiet.
 async function envClientValue(name: string): Promise<string | undefined> {
   try {
     const core = (await import("../core.ts")) as { getSecret?: (n: string) => string | undefined };
@@ -48,10 +60,10 @@ if (-not [SubtrkCredRead]::CredRead('gemini:antigravity', 1, 0, [ref]$p)) { exit
 try { $c = [Runtime.InteropServices.Marshal]::PtrToStructure($p, [type][SubtrkCredRead+CREDENTIAL]); $n = $c.CredentialBlobSize; $b = New-Object byte[] $n; [Runtime.InteropServices.Marshal]::Copy($c.CredentialBlob, $b, 0, $n); $s = [Console]::OpenStandardOutput(); $s.Write($b, 0, $n); $s.Flush() } finally { [SubtrkCredRead]::CredFree($p) }`;
 
 export interface GoogleCreds {
-  accessToken: string;
+  accessToken?: string; // optional only for the cliproxy lineage (refresh-only files)
   refreshToken?: string;
   expiresAtMs?: number;
-  lineage: "gemini" | "antigravity" | "agy-keyring";
+  lineage: "cliproxy" | "gemini" | "antigravity" | "agy-keyring";
   raw?: Record<string, unknown>; // original JSON object, for gemini-lineage write-back
 }
 
@@ -75,6 +87,24 @@ export function parseAgyKeyringBlob(obj: unknown): AgyKeyringToken | null {
     if (Number.isFinite(ms)) out.expiresAtMs = ms;
   }
   return out;
+}
+
+// Pure: CLIProxyAPI auth file { type: "antigravity", access_token?, refresh_token,
+// expired (RFC3339), ... }. The antigravity type and a non-empty refresh token are
+// required; the access token is optional (a stale one is always minted fresh) and
+// the raw JSON is kept for nothing – there is no write-back to this store, ever.
+export function parseCliproxyAuthFile(obj: unknown): GoogleCreds | null {
+  if (typeof obj !== "object" || obj === null) return null;
+  const o = obj as { type?: unknown; access_token?: unknown; refresh_token?: unknown; expired?: unknown };
+  if (o.type !== "antigravity") return null;
+  if (typeof o.refresh_token !== "string" || o.refresh_token === "") return null;
+  const creds: GoogleCreds = { refreshToken: o.refresh_token, lineage: "cliproxy" };
+  if (typeof o.access_token === "string" && o.access_token !== "") creds.accessToken = o.access_token;
+  if (typeof o.expired === "string") {
+    const ms = Date.parse(o.expired);
+    if (Number.isFinite(ms)) creds.expiresAtMs = ms;
+  }
+  return creds;
 }
 
 // Pure: legacy gemini oauth_creds.json shape.
@@ -115,21 +145,31 @@ export function googleExpired(creds: GoogleCreds, nowMs: number): boolean {
   return nowMs >= creds.expiresAtMs - SKEW_MS;
 }
 
-// Shared expired-token wording for the keyring pre-flight and the 401-after-reread
-// path – one object, so both triggers give operators identical guidance.
-const KEYRING_EXPIRED_ERROR: ProviderError = {
+// Shared wording for the self-refresh lineages: a rejected grant means the stored
+// login died – re-login once in the owning tool. agy need not be running; a
+// CLIProxyAPI login works too.
+const GRANT_REJECTED_ERROR: ProviderError = {
   kind: "expired-token",
-  message: "token rejected (401, also after one credential re-read)",
-  hint: "launch agy once so it refreshes its token, then re-run",
-  remedy: "re-login inside agy",
+  message: "refresh token rejected by Google",
+  hint: "the stored login was revoked – re-login once",
+  remedy: "re-login inside agy (or CLIProxyAPI)",
 };
 
-// Pure: probe-path pre-flight – an expired blob cannot survive the quota fetch, so
-// report the shared expired-token error up front; null when the fetch is worth trying.
-export function googlePreFlight(creds: GoogleCreds, nowMs: number): ProviderError | null {
-  if (typeof creds.expiresAtMs !== "number" || !Number.isFinite(creds.expiresAtMs)) return null;
-  if (!googleExpired(creds, nowMs)) return null;
-  return KEYRING_EXPIRED_ERROR;
+// Pure: the public Antigravity client constants are fetched by `subtrk init` into
+// ~/.subtrk/env – no literal lives in this repo, so secret scanners stay quiet.
+export const ANTIGRAVITY_CONSTANTS_MISSING: ProviderError = {
+  kind: "no-credentials",
+  message: "antigravity client constants missing",
+  hint: "run subtrk init (fetches the public values)",
+  remedy: "subtrk init",
+};
+
+// Pure: self-refresh decision for the cliproxy/agy-keyring lineages – an absent
+// access token or an expiry inside the safety window means mint instead of fail.
+export function needsRefresh(creds: GoogleCreds, nowMs: number): boolean {
+  if (!creds.accessToken) return true;
+  if (typeof creds.expiresAtMs !== "number" || !Number.isFinite(creds.expiresAtMs)) return false;
+  return nowMs >= creds.expiresAtMs - REFRESH_WINDOW_MS;
 }
 
 // Pure: "Gemini Models" -> "gemini-models".
@@ -262,7 +302,7 @@ async function registerSecret(secret: string): Promise<void> {
 }
 
 async function registerCreds(creds: GoogleCreds): Promise<void> {
-  await registerSecret(creds.accessToken);
+  if (creds.accessToken) await registerSecret(creds.accessToken);
   if (creds.refreshToken) await registerSecret(creds.refreshToken);
 }
 
@@ -304,7 +344,36 @@ async function readKeyringCreds(): Promise<GoogleCreds | null> {
   }
 }
 
+// CLIProxyAPI keeps one JSON auth file per account in ~/.cli-proxy-api; filenames
+// matching antigravity*.json may carry the account email – a name is never logged
+// or surfaced. Cross-platform, so this source is tried before the win32-only
+// keyring. First file that parses as an antigravity auth with a refresh token wins.
+function readCliproxyCreds(): GoogleCreds | null {
+  const dir = join(homedir(), ".cli-proxy-api");
+  let names: string[];
+  try {
+    names = readdirSync(dir, "utf8")
+      .filter((n) => /^antigravity.*\.json$/.test(n))
+      .sort();
+  } catch {
+    return null; // no CLIProxyAPI store on this host
+  }
+  for (const name of names) {
+    const text = readTextIfExists(join(dir, name));
+    if (text === null) continue;
+    try {
+      const creds = parseCliproxyAuthFile(JSON.parse(text));
+      if (creds) return creds;
+    } catch {
+      // not JSON – try the next file
+    }
+  }
+  return null;
+}
+
 async function discoverCreds(): Promise<{ creds: GoogleCreds; path?: string } | null> {
+  const cliproxy = readCliproxyCreds();
+  if (cliproxy) return { creds: cliproxy };
   const keyring = await readKeyringCreds();
   if (keyring) return { creds: keyring };
   const geminiPath = join(homedir(), ".gemini", "oauth_creds.json");
@@ -405,6 +474,75 @@ async function refreshAccessToken(creds: GoogleCreds): Promise<RefreshOutcome> {
   return { ok: true, accessToken, expiresAtMs: Date.now() + expiresIn * 1000 };
 }
 
+// ---- self-refresh for the cliproxy/agy-keyring lineages ----
+
+// Pure: form-encoded refresh grant for the Antigravity client – a CONFIDENTIAL
+// client, so both constants travel (CLIProxyAPI sends the same request).
+export function buildAntigravityRefreshForm(refreshToken: string, clientId: string, clientSecret: string): string {
+  return new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+    client_id: clientId,
+    client_secret: clientSecret,
+  }).toString();
+}
+
+// Pure: map a failed token-endpoint grant to the operator error. Google answers a
+// revoked login with 400/401 (body error invalid_grant); anything else stays a
+// transport-level http-error.
+export function mapGrantFailure(status: number | undefined, errorCode: string): ProviderError {
+  if (status === 400 || status === 401 || errorCode === "invalid_grant") return GRANT_REJECTED_ERROR;
+  return status === undefined
+    ? { kind: "http-error", message: "token endpoint unreachable" }
+    : { kind: "http-error", message: `HTTP ${status}`, status };
+}
+
+// Pure: validate the token endpoint's success body. Google returns NO new
+// refresh_token (non-rotating) – nothing here is ever persisted.
+export function parseMintResponse(text: string, nowMs: number): RefreshOutcome {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return { ok: false, error: { kind: "parse-failure", message: "refresh response was not JSON" } };
+  }
+  const accessToken = (body as { access_token?: unknown }).access_token;
+  const expiresIn = (body as { expires_in?: unknown }).expires_in;
+  if (
+    typeof accessToken !== "string" ||
+    accessToken === "" ||
+    typeof expiresIn !== "number" ||
+    !Number.isFinite(expiresIn)
+  ) {
+    return { ok: false, error: { kind: "parse-failure", message: "refresh response missing access_token/expires_in" } };
+  }
+  return { ok: true, accessToken, expiresAtMs: nowMs + expiresIn * 1000 };
+}
+
+// Thin wrapper (untested, like alibaba's mapRefreshOutcome caller): resolve the
+// public constants from ~/.subtrk/env, post the grant, map the outcome.
+async function mintAccessToken(refreshToken: string): Promise<RefreshOutcome> {
+  const clientId = await envClientValue("ANTIGRAVITY_CLIENT_ID");
+  const clientSecret = await envClientValue("ANTIGRAVITY_CLIENT_SECRET");
+  if (!clientId || !clientSecret) return { ok: false, error: ANTIGRAVITY_CONSTANTS_MISSING };
+  const out = await postForm(
+    TOKEN_URL,
+    new URLSearchParams(buildAntigravityRefreshForm(refreshToken, clientId, clientSecret)),
+  );
+  if (!out.ok) {
+    let code = "";
+    if (typeof out.text === "string") {
+      try {
+        code = String((JSON.parse(out.text) as { error?: unknown }).error ?? "");
+      } catch {
+        // body not JSON – no error code available
+      }
+    }
+    return { ok: false, error: mapGrantFailure(out.status, code) };
+  }
+  return parseMintResponse(out.text, Date.now());
+}
+
 function fail(error: ProviderError, fetchedAt: string): ProviderResult {
   return { id: "google", ok: false, stale: false, fetchedAt, error };
 }
@@ -416,23 +554,38 @@ async function probeInner(): Promise<ProviderResult> {
     return fail(
       {
         kind: "no-credentials",
-        message: "no Gemini/Antigravity credential found (keyring and file lineages)",
-        hint: "install agy (irm https://antigravity.google/cli/install.ps1 | iex) and log in once",
+        message: "no Google/Antigravity credential found (CLIProxyAPI, keyring and file lineages)",
+        hint: "log in once with agy (irm https://antigravity.google/cli/install.ps1 | iex) or with CLIProxyAPI",
       },
       fetchedAt,
     );
   }
   await registerCreds(found.creds);
 
-  let token = found.creds.accessToken;
-  // Keyring tokens are refreshed in place by agy – no local refresh; the pre-flight
-  // below fails an already-expired blob fast and the 401 path re-reads the blob once
-  // for the rest. File lineages keep the expiry check + refresh (write-back for the
-  // gemini lineage only).
-  if (found.creds.lineage === "agy-keyring") {
-    // Expired per blob -> skip the doomed fetch; avoids the timeout masking the real error.
-    const pre = googlePreFlight(found.creds, Date.now());
-    if (pre) return fail(pre, fetchedAt);
+  let token = found.creds.accessToken ?? "";
+  // Self-refresh lineages: an absent or stale token is MINTED, not an error – the
+  // stored refresh token stays valid. Google's refresh tokens are non-rotating
+  // (verified 2026-09-25), so nothing is ever written back to the keyring or the
+  // CLIProxyAPI auth file; the minted token lives in this local variable only.
+  // File lineages keep the expiry check + refresh (write-back for gemini only).
+  if (found.creds.lineage === "cliproxy" || found.creds.lineage === "agy-keyring") {
+    if (needsRefresh(found.creds, Date.now())) {
+      if (!found.creds.refreshToken) {
+        return fail(
+          {
+            kind: "expired-token",
+            message: "access token stale and the credential carries no refresh_token",
+            hint: "re-login once in the owning tool",
+            remedy: "re-login inside agy (or CLIProxyAPI)",
+          },
+          fetchedAt,
+        );
+      }
+      const minted = await mintAccessToken(found.creds.refreshToken);
+      if (!minted.ok) return fail(minted.error, fetchedAt);
+      await registerSecret(minted.accessToken);
+      token = minted.accessToken;
+    }
   } else if (googleExpired(found.creds, Date.now())) {
     if (!found.creds.refreshToken) {
       return fail(
@@ -455,15 +608,24 @@ async function probeInner(): Promise<ProviderResult> {
 
   let out = await postJson(`${PRIMARY_HOST}${QUOTA_PATH}`, {}, token);
   if (!out.ok && out.status === 401) {
-    // agy may have refreshed its keyring blob in place – re-read once, retry once.
+    // agy/CLIProxyAPI may have refreshed their stored credential in place –
+    // re-read once, retry once.
     const reread = await discoverCreds();
     if (reread) {
       await registerCreds(reread.creds);
-      token = reread.creds.accessToken;
+      token = reread.creds.accessToken ?? token;
     }
     out = await postJson(`${PRIMARY_HOST}${QUOTA_PATH}`, {}, token);
     if (!out.ok && out.status === 401) {
-      return fail(KEYRING_EXPIRED_ERROR, fetchedAt);
+      return fail(
+        {
+          kind: "expired-token",
+          message: "token rejected (401, also after one credential re-read)",
+          hint: "the stored login was revoked – re-login once",
+          remedy: "re-login inside agy (or CLIProxyAPI)",
+        },
+        fetchedAt,
+      );
     }
   }
   if (!out.ok && (out.status === 403 || out.status === 404)) {
@@ -499,17 +661,30 @@ async function probeInner(): Promise<ProviderResult> {
   return { id: "google", ok: true, stale: false, fetchedAt, windows };
 }
 
+// probe = credential load + (stale -> mint for the self-refresh lineages) + quota
+// read. refresh reuses it: the self-refresh path already mints from the stored
+// non-rotating refresh token (read-only, no write-back), so "refresh" is simply
+// "probe now".
+function probe(): Promise<ProviderResult> {
+  return probeInner().catch(
+    (e: unknown): ProviderResult =>
+      fail(
+        { kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` },
+        new Date().toISOString(),
+      ),
+  );
+}
+
 const provider: ProviderModule = {
   id: "google",
   ttlMs: 60_000,
-  probe(): Promise<ProviderResult> {
-    return probeInner().catch(
-      (e: unknown): ProviderResult =>
-        fail(
-          { kind: "http-error", message: `probe failed: ${e instanceof Error ? e.message : "unknown"}` },
-          new Date().toISOString(),
-        ),
-    );
+  probe,
+  refresh: async () => {
+    const r = await probe();
+    return {
+      ok: r.ok,
+      message: r.ok ? "google token refreshed" : (r.error?.message ?? "google refresh failed"),
+    };
   },
 };
 export default provider;
