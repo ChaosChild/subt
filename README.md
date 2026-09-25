@@ -74,6 +74,16 @@ politely, and speaks both human and agent.
 
 Requires Node ≥22.18.
 
+No install needed – every command runs through npx:
+
+```bash
+npx subtrk init     # one-time interactive setup
+npx subtrk serve    # web console
+npx subtrk          # same as: npx subtrk status
+```
+
+Or install globally:
+
 ```bash
 npm install -g subtrk
 subtrk init       # one-time interactive setup
