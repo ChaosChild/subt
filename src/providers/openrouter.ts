@@ -1,5 +1,5 @@
-// openrouter — pay-as-you-go. /key with the inference key; /credits ONLY with the
-// management key (never the inference key — that is a guaranteed 403).
+// openrouter – pay-as-you-go. /key with the inference key; /credits ONLY with the
+// management key (never the inference key – that is a guaranteed 403).
 
 import type { Credits, ProviderError, ProviderModule, ProviderResult } from "../core.ts";
 
@@ -100,7 +100,7 @@ async function getSecret(name: string): Promise<string | undefined> {
       if (s) return s;
     }
   } catch {
-    // core not present — process.env only
+    // core not present – process.env only
   }
   return undefined;
 }
@@ -110,7 +110,7 @@ async function registerSecret(secret: string): Promise<void> {
     const core = (await import("../core.ts")) as { registerSecret?: (s: string) => void };
     if (typeof core.registerSecret === "function") core.registerSecret(secret);
   } catch {
-    // core not present — local-variable discipline applies
+    // core not present – local-variable discipline applies
   }
 }
 
@@ -157,7 +157,7 @@ async function probeInner(): Promise<ProviderResult> {
         const credits = parseOpenrouterCredits(JSON.parse(cr.text));
         if (credits) result.credits = credits;
       } catch {
-        // auxiliary call — omit credits rather than fail the provider
+        // auxiliary call – omit credits rather than fail the provider
       }
     }
   }

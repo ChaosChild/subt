@@ -1,6 +1,6 @@
 // Redaction discipline at the provider layer: a fixture secret injected into
 // response bodies and credential shapes must never surface in any parsed result
-// or constructed error path. Pure checks — no core dependency, no network.
+// or constructed error path. Pure checks – no core dependency, no network.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -75,7 +75,7 @@ test("parsers ignore injected secret fields and never echo them", () => {
   assert.equal(opencodeKey, "real-key");
 });
 
-test("JSON extraction only takes the braced region — banner secrets stay out", () => {
+test("JSON extraction only takes the braced region – banner secrets stay out", () => {
   const stdout = `secret-in-banner: ${SECRET}\n{"ok": true, "totalQuota": 1}\n`;
   const parsed = extractJson(stdout);
   assert.deepEqual(parsed, { ok: true, totalQuota: 1 });

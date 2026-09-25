@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>subtrk console</title>
-<meta name="description" content="M2 design mock of the subtrk serve web console — static, with mock data.">
-<!-- ponytail: system font stacks, no web fonts — the real page is served offline from 127.0.0.1 and must not call out to a CDN -->
+<meta name="description" content="M2 design mock of the subtrk serve web console – static, with mock data.">
+<!-- ponytail: system font stacks, no web fonts – the real page is served offline from 127.0.0.1 and must not call out to a CDN -->
 <style>
 :root {
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Inter", "Helvetica Neue", Arial, sans-serif;
@@ -181,7 +181,7 @@ footer code { font-family: var(--mono); color: var(--text-2); }
 <header>
   <div class="wrap bar">
     <div class="brand"><div class="logo">s</div>subtrk <small>console</small></div>
-    <span class="mockchip" title="Static design mock — numbers are fixtures, not live data">Mock data</span>
+    <span class="mockchip" title="Static design mock – numbers are fixtures, not live data">Mock data</span>
     <div class="spacer"></div>
     <div class="meta">
       <span class="hide-sm"><span class="dot"></span>&nbsp; 127.0.0.1:52817 · token auth</span>
@@ -234,7 +234,7 @@ footer code { font-family: var(--mono); color: var(--text-2); }
 </footer>
 
 <script>
-// Mock /api/status payload — same shape as `subtrk status --json` (docs/spec.md).
+// Mock /api/status payload – same shape as `subtrk status --json` (docs/spec.md).
 // ponytail: fixed clock so the mock always reads sensibly; the real page uses Date.now().
 const NOW = new Date("2026-09-23T13:20:00").getTime();
 const T0 = Date.now();
@@ -265,7 +265,7 @@ const STATUS = {
         { kind: "weekly", scope: "claude-and-gpt-models", remainingFraction: 0.47, resetsAt: at("2026-09-27T08:00:00") } ],
       error: { kind: "timeout", message: "quota summary did not answer within 10s", hint: "showing cached values; retried automatically" } },
     { id: "opencode", ok: true, stale: false, fetchedAt: at("2026-09-23T13:20:00"), plan: "Zen pay-as-you-go",
-      note: "PAYG — no usage/balance API; inference errors are the only signal" },
+      note: "PAYG – no usage/balance API; inference errors are the only signal" },
     { id: "openrouter", ok: true, stale: false, fetchedAt: at("2026-09-23T13:19:55"), plan: "Pay-as-you-go",
       credits: { total: 100, remaining: 74.75, unit: "usd", source: "api" }, note: "key today $1.20" },
   ],
@@ -281,7 +281,7 @@ const META = {
   openrouter: { name: "OpenRouter", color: "#6467f2", ttl: 60 },
 };
 
-// Vendor strings go through esc() — never raw into innerHTML (the real page renders third-party text).
+// Vendor strings go through esc() – never raw into innerHTML (the real page renders third-party text).
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const used = w => w.usedPercent ?? (1 - w.remainingFraction) * 100;
 const level = p => p >= 95 ? "crit" : p >= 80 ? "warn" : "ok";
@@ -338,7 +338,7 @@ function providerHTML(p) {
       body += windowHTML(w);
     }
   }
-  if (p.error) body += `<div class="err"><span class="k">${esc(p.error.kind)}</span> — ${esc(p.error.message)}${p.error.hint ? `<div class="h">${esc(p.error.hint)}</div>` : ""}</div>`;
+  if (p.error) body += `<div class="err"><span class="k">${esc(p.error.kind)}</span> – ${esc(p.error.message)}${p.error.hint ? `<div class="h">${esc(p.error.hint)}</div>` : ""}</div>`;
   if (p.note) body += `<div class="note">${esc(p.note)}</div>`;
   return `<article class="card prov ${worst >= 95 ? "crit" : ""}">
     <div class="phead"><div class="pmark" style="background:${m.color}">${esc(p.id.slice(0, 2).toUpperCase())}</div>
@@ -361,7 +361,7 @@ function summaryHTML() {
   const usd = ps.filter(p => p.credits?.unit === "usd").reduce((s, p) => s + p.credits.remaining, 0);
   return `
   <div class="card stat next"><div class="label">Next reset · ${esc(ne.providerId)} ${esc(neW.kind)}</div>
-    <div class="value" id="nextcd"></div><div class="sub">at ${hm(ne.at)} · currently ${used(neW).toFixed(0)}% used — agents wake at <span class="mono">nextEvent.at</span></div></div>
+    <div class="value" id="nextcd"></div><div class="sub">at ${hm(ne.at)} · currently ${used(neW).toFixed(0)}% used – agents wake at <span class="mono">nextEvent.at</span></div></div>
   <div class="card stat"><div class="label">Providers</div><div class="value">${ps.filter(p => p.ok).length}<span style="color:var(--text-3);font-size:18px"> / ${ps.length}</span></div><div class="sub">${errs ? `${errs} degraded` : "all reporting"}${stale ? ` · ${stale} stale` : ""}</div></div>
   <div class="card stat"><div class="label">Windows ≥80%</div><div class="value" style="color:${hot.length ? "var(--crit)" : "var(--ok)"}">${hot.length}</div><div class="sub">${hot.map(x => `${esc(x.p.id)} ${esc(x.w.scope ? x.w.scope.split("-")[0] + " " : "")}${esc(x.w.kind)}`).join(", ") || "none"}</div></div>
   <div class="card stat"><div class="label">Pay-as-you-go</div><div class="value num">$${usd.toFixed(2)}</div><div class="sub">OpenRouter balance · OpenCode untracked</div></div>

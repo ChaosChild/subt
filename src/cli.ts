@@ -2,7 +2,7 @@
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-// cli.ts — subtrk entry point. `subtrk` / `subtrk status` / `subtrk init` / `subtrk serve`.
+// cli.ts – subtrk entry point. `subtrk` / `subtrk status` / `subtrk init` / `subtrk serve`.
 // The providers registry lives in ./providers/index.ts (allProviders) and is
 // imported lazily (from collectStatus) so tests can inject a stub registry via
 // main()'s deps seam.
@@ -34,7 +34,7 @@ export interface CliDeps {
 const STATUS_FIELDS = ["windows", "credits", "errors", "hints"] as const;
 type StatusField = (typeof STATUS_FIELDS)[number];
 
-const USAGE = `subtrk — remaining quota across paid AI subscriptions
+const USAGE = `subtrk – remaining quota across your tracked providers
 
 usage:
   subtrk                  same as: subtrk status
@@ -52,13 +52,13 @@ status flags:
 
 exit codes: 0 ran · 1 runtime failure · 2 usage error · 3 --strict violation`;
 
-const SERVE_USAGE = `subtrk serve — local web console (read-only, loopback only)
+const SERVE_USAGE = `subtrk serve – local web console (read-only, loopback only)
 
-Serves one URL, http://127.0.0.1:<port>/#<token> — the per-run random token rides
+Serves one URL, http://127.0.0.1:<port>/#<token> – the per-run random token rides
 the fragment, never argv or logs; API calls need Authorization: Bearer <token>.
 Ctrl-C stops the server. flag: --port N (default: random ephemeral port)`;
 
-const INIT_USAGE = `subtrk init — one-time interactive setup
+const INIT_USAGE = `subtrk init – one-time interactive setup
 
 Checks every provider, offers installs and logins where missing, and writes
 new secrets to ~/.subtrk/env (mode 0600 on POSIX). Secrets are never echoed.
@@ -142,10 +142,10 @@ function renderText(
     let line = `${r.id.padEnd(10)} ${segs.join(" · ")}`;
     if (!r.ok && r.error) {
       if (segs.length === 0)
-        line = `${r.id.padEnd(10)} error: ${r.error.kind} — ${oneLine(r.error.message)}${r.error.hint ? ` (${oneLine(r.error.hint)})` : ""}`;
-      else if (show("errors")) line += ` · error: ${r.error.kind} — ${oneLine(r.error.message)}`;
+        line = `${r.id.padEnd(10)} error: ${r.error.kind} – ${oneLine(r.error.message)}${r.error.hint ? ` (${oneLine(r.error.hint)})` : ""}`;
+      else if (show("errors")) line += ` · error: ${r.error.kind} – ${oneLine(r.error.message)}`;
     }
-    if (show("hints") && r.error?.hint) line += ` — hint: ${oneLine(r.error.hint)}`;
+    if (show("hints") && r.error?.hint) line += ` – hint: ${oneLine(r.error.hint)}`;
     if (r.stale) line += "  [stale]";
     if (isHot(r)) line += " !";
     lines.push(scrub(line.trimEnd()));
@@ -193,7 +193,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
   }
   const positionals = parsed.positionals;
   if (positionals.length > 1) {
-    console.error(`subtrk: unexpected argument '${positionals[1]}' — try subtrk --help`);
+    console.error(`subtrk: unexpected argument '${positionals[1]}' – try subtrk --help`);
     return 2;
   }
   const cmd = positionals[0] ?? "status"; // bare `subtrk` = status, never help
@@ -246,7 +246,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     }
   }
   if (cmd !== "status") {
-    console.error(`subtrk: unknown command '${cmd}' — try subtrk --help`);
+    console.error(`subtrk: unknown command '${cmd}' – try subtrk --help`);
     return 2;
   }
 
@@ -258,7 +258,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
       .map((s) => s.trim())
       .filter(Boolean)) {
       if (!(STATUS_FIELDS as readonly string[]).includes(f)) {
-        console.error(`subtrk: unknown field '${f}' — valid: ${STATUS_FIELDS.join(",")}`);
+        console.error(`subtrk: unknown field '${f}' – valid: ${STATUS_FIELDS.join(",")}`);
         return 2;
       }
       fieldSet.add(f as StatusField);

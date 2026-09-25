@@ -1,4 +1,4 @@
-// Pure-parser tests for all six providers — fixtures only, no network, no real user files.
+// Pure-parser tests for every provider – fixtures only, no network, no real user files.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

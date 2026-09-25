@@ -1,4 +1,4 @@
-// alibaba — Model Studio Token Plan (international: credits, 30-day cycle)
+// alibaba – Model Studio Token Plan (international: credits, 30-day cycle)
 // via the official Bailian CLI (`bl`). `bl usage token-plan` drops the monthly
 // fields (formatter bug as of bl 2.0.1), so we use bl's raw gateway passthrough:
 // `bl console call --api zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/*`.
@@ -53,7 +53,7 @@ function runBl(literal: string, args: readonly string[]): Promise<BlRun> {
   });
 }
 
-// Pure: pull the JSON object out of stdout that may carry banners — first "{" to last "}".
+// Pure: pull the JSON object out of stdout that may carry banners – first "{" to last "}".
 export function extractJson(text: string): unknown | null {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
@@ -66,7 +66,7 @@ export function extractJson(text: string): unknown | null {
 }
 
 // Unwrap the bl console-call envelope, which double-nests the zelda payload:
-// {code:"200", data:{DataV2:{ret, data:{msg, code, data:{…fields}}}}} — and also
+// {code:"200", data:{DataV2:{ret, data:{msg, code, data:{…fields}}}}} – and also
 // accept the bare zelda envelope {msg, code, data:{…fields}}.
 function dataOf(envelope: unknown): Record<string, unknown> | null {
   if (typeof envelope !== "object" || envelope === null) return null;
@@ -89,7 +89,7 @@ export function parseTokenPlanUsage(envelope: unknown): Window[] {
   const ratio = d.per1MonthPercentage;
   const resetMs = d.per1MonthResetTime;
   if (typeof ratio === "number" && Number.isFinite(ratio) && typeof resetMs === "number" && Number.isFinite(resetMs)) {
-    // full precision — the renderer rounds for display; deriveCredits uses it for the pool math
+    // full precision – the renderer rounds for display; deriveCredits uses it for the pool math
     windows.push({ kind: "30d", usedPercent: ratio * 100, resetsAt: new Date(resetMs).toISOString() });
   }
   const pct = (kind: string, p: unknown, r: unknown): void => {
@@ -108,7 +108,7 @@ export interface SubscriptionInfo {
   status?: string;
 }
 
-// Pure: v2/subscription — spec tier ("standard"), renewal countdown, status.
+// Pure: v2/subscription – spec tier ("standard"), renewal countdown, status.
 export function parseSubscription(envelope: unknown): SubscriptionInfo {
   const d = dataOf(envelope);
   if (!d) return {};
@@ -119,7 +119,7 @@ export function parseSubscription(envelope: unknown): SubscriptionInfo {
   return info;
 }
 
-// Pure: v2/quota-config — every spec's monthly credit total (e.g. standard 45000).
+// Pure: v2/quota-config – every spec's monthly credit total (e.g. standard 45000).
 export function parseQuotaConfig(envelope: unknown): Record<string, number> {
   const out: Record<string, number> = {};
   const d = dataOf(envelope);
@@ -145,7 +145,7 @@ export function deriveCredits(monthly: Window | undefined, specTotal: number | u
   };
 }
 
-// Pure: stderr may embed tokens — only ever surfaced after truncation to the last
+// Pure: stderr may embed tokens – only ever surfaced after truncation to the last
 // 200 chars AND a pass through the redaction layer. Without a redact fn it is withheld.
 export function stderrMessage(stderr: string, redact?: (s: string) => string): string {
   if (typeof redact !== "function") return "bl exited non-zero (stderr withheld)";
@@ -158,7 +158,7 @@ async function coreRedact(): Promise<((s: string) => string) | undefined> {
     if (typeof core.scrub === "function") return core.scrub; // core.ts's actual export name
     if (typeof core.redact === "function") return core.redact;
   } catch {
-    // core not present — stderr will be withheld
+    // core not present – stderr will be withheld
   }
   return undefined;
 }
@@ -195,7 +195,7 @@ async function probeInner(): Promise<ProviderResult> {
     return fail({ kind: "subprocess-failed", message: stderrMessage(run.stderr, redact) }, fetchedAt);
   };
 
-  // Secondary calls run in parallel with usage — each bl spawn costs seconds.
+  // Secondary calls run in parallel with usage – each bl spawn costs seconds.
   const sub = callArgs(API_SUBSCRIPTION);
   const qc = callArgs(API_QUOTA_CONFIG);
   const subPromise = runBl(sub.literal, sub.args);
@@ -203,7 +203,7 @@ async function probeInner(): Promise<ProviderResult> {
 
   const usage = callArgs(API_USAGE);
   let usageRun = await runBl(usage.literal, usage.args);
-  // Known gateway flakiness: 200-Success with empty data — retry once or twice.
+  // Known gateway flakiness: 200-Success with empty data – retry once or twice.
   for (let i = 0; i < 2 && usageRun.ok && parseTokenPlanUsage(extractJson(usageRun.stdout)).length === 0; i++) {
     usageRun = await runBl(usage.literal, usage.args);
   }
@@ -223,8 +223,8 @@ async function probeInner(): Promise<ProviderResult> {
   if (windows.length > 0) result.windows = windows;
   if (credits) result.credits = credits;
   if (!result.windows && !result.credits) {
-    // console session valid but zero plan data — wrong site or account, not "ok".
-    result.note = "logged in, but no plan data returned — wrong console site or account?";
+    // console session valid but zero plan data – wrong site or account, not "ok".
+    result.note = "logged in, but no plan data returned – wrong console site or account?";
   }
   return result;
 }

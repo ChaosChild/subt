@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please report vulnerabilities privately — do not open a public issue.
+Please report vulnerabilities privately – do not open a public issue.
 
 Contact: use [GitHub security advisories](https://github.com/ChaosChild/subtrk/security/advisories/new)
 ("Report a vulnerability"). You'll get an acknowledgement within a few days.
@@ -24,5 +24,5 @@ summarized in the README's Security notes. The short version:
 
 - The `subtrk` code in this repository.
 - Out of scope: the vendors' own endpoints (report abuse to them), and
-  anything requiring code execution as your user — that boundary is already
+  anything requiring code execution as your user – that boundary is already
   the documented trust model.

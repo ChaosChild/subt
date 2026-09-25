@@ -1,5 +1,5 @@
-// serve.test.ts — `subtrk serve` (M2): auth, host allowlist, routing, CORS
-// absence. Every request targets our own listening socket on 127.0.0.1 — no
+// serve.test.ts – `subtrk serve` (M2): auth, host allowlist, routing, CORS
+// absence. Every request targets our own listening socket on 127.0.0.1 – no
 // other network. Stub providers ride the same deps seam as the CLI tests.
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -98,7 +98,7 @@ describe("subtrk serve", () => {
     });
   });
 
-  it("200 with the correct Bearer token — full StatusOutput shape, erroring provider degrades", async () => {
+  it("200 with the correct Bearer token – full StatusOutput shape, erroring provider degrades", async () => {
     const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
     await withServer({ providers: [okModule("claude"), failingModule("google")], subtrkDir }, async (h) => {
       const r = await get(h.port, "/api/status", {
@@ -125,7 +125,7 @@ describe("subtrk serve", () => {
     });
   });
 
-  it("timing-safe compare survives short/long/malformed tokens — all 401", async () => {
+  it("timing-safe compare survives short/long/malformed tokens – all 401", async () => {
     const subtrkDir = mkdtempSync(join(tmpdir(), "subtrk-serve-"));
     await withServer({ providers: [okModule("claude")], subtrkDir }, async (h) => {
       for (const bad of ["abc", `${h.token}ff`, "0".repeat(64), ` ${h.token}`]) {

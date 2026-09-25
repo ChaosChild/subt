@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>subtrk console</title>
 <meta name="description" content="Live web console served by subtrk serve.">
-<!-- ponytail: system font stacks, no web fonts — the page is served offline from 127.0.0.1 and must not call out to a CDN -->
+<!-- ponytail: system font stacks, no web fonts – the page is served offline from 127.0.0.1 and must not call out to a CDN -->
 <style>
 :root {
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Inter", "Helvetica Neue", Arial, sans-serif;
@@ -247,7 +247,7 @@ footer code { font-family: var(--mono); color: var(--text-2); }
 </footer>
 
 <script>
-// subtrk serve console — live page.
+// subtrk serve console – live page.
 // The bearer token arrives in the URL fragment (#<token> or #token=<token>) and is
 // used only as the Authorization header on /api/status requests: never stored,
 // never logged, never rendered, never placed in a query string.
@@ -265,12 +265,12 @@ const FALLBACK_MS = 60000; // safety re-fetch cadence when recheckAfter is missi
 const HOST = "127.0.0.1" + (location.port ? ":" + location.port : "");
 
 let STATUS = null;        // last successful /api/status payload
-let token = readToken();  // fragment credential — memory only
+let token = readToken();  // fragment credential – memory only
 let timer = null;         // the single pending re-fetch
 let inFlight = false;     // never parallel-fetch
 let nextFetchAt = null;   // epoch-ms of the scheduled fetch, for the header countdown
 
-// Vendor-derived strings go through esc() — never raw into innerHTML.
+// Vendor-derived strings go through esc() – never raw into innerHTML.
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const $ = id => document.getElementById(id);
 const now = () => Date.now();
@@ -348,7 +348,7 @@ function providerHTML(p) {
       body += windowHTML(w);
     }
   }
-  if (p.error) body += `<div class="err"><span class="k">${esc(p.error.kind)}</span> — ${esc(p.error.message)}${p.error.hint ? `<div class="h">${esc(p.error.hint)}</div>` : ""}</div>`;
+  if (p.error) body += `<div class="err"><span class="k">${esc(p.error.kind)}</span> – ${esc(p.error.message)}${p.error.hint ? `<div class="h">${esc(p.error.hint)}</div>` : ""}</div>`;
   if (p.note) body += `<div class="note">${esc(p.note)}</div>`;
   return `<article class="card prov ${worst >= 95 ? "crit" : ""}">
     <div class="phead"><div class="pmark" style="background:${m.color}">${esc(String(p.id).slice(0, 2).toUpperCase())}</div>
@@ -370,7 +370,7 @@ function summaryHTML() {
     const neP = ps.find(p => p.id === ne.providerId);
     const neW = neP && Array.isArray(neP.windows) ? neP.windows.find(w => w && w.resetsAt === ne.at) : null;
     nextCard = `<div class="card stat next"><div class="label">Next reset · ${esc(ne.providerId)}${neW ? " " + esc(neW.kind) : ""}</div>
-    <div class="value" id="nextcd"></div><div class="sub">at ${hm(ne.at)}${neW ? ` · currently ${used(neW).toFixed(0)}% used` : ""} — agents wake at <span class="mono">nextEvent.at</span></div></div>`;
+    <div class="value" id="nextcd"></div><div class="sub">at ${hm(ne.at)}${neW ? ` · currently ${used(neW).toFixed(0)}% used` : ""} – agents wake at <span class="mono">nextEvent.at</span></div></div>`;
   } else {
     nextCard = `<div class="card stat next"><div class="label">Next reset</div><div class="value" style="font-size:20px;color:var(--text-3)">no pending resets</div><div class="sub">no ok provider reports a window right now</div></div>`;
   }
@@ -383,7 +383,7 @@ function summaryHTML() {
     const c = ali.credits, rem = Number(c.remaining);
     aliCard = `<div class="card stat"><div class="label">Alibaba credits</div><div class="value num">${Number.isFinite(rem) ? (rem / 1000).toFixed(1) + "k" : "…"}</div><div class="sub">of ${c.total != null ? money(c.total, c.unit) : "?"}${c.cycleEndsAt ? ` · ${rel(new Date(c.cycleEndsAt) - now()).split(" ")[0]} left in cycle` : ""}</div></div>`;
   } else {
-    aliCard = `<div class="card stat"><div class="label">Alibaba credits</div><div class="value" style="font-size:20px;color:var(--text-3)">—</div><div class="sub">no credit data reported</div></div>`;
+    aliCard = `<div class="card stat"><div class="label">Alibaba credits</div><div class="value" style="font-size:20px;color:var(--text-3)">–</div><div class="sub">no credit data reported</div></div>`;
   }
   return nextCard + `
   <div class="card stat"><div class="label">Providers</div><div class="value">${ps.filter(p => p.ok).length}<span style="color:var(--text-3);font-size:18px"> / ${ps.length}</span></div><div class="sub">${errs ? `${errs} degraded` : "all reporting"}${stale ? ` · ${stale} stale` : ""}</div></div>
@@ -479,7 +479,7 @@ async function refresh() {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (res.status === 401) {
-      showBanner("crit", "token rejected — restart subtrk serve and open the fresh URL");
+      showBanner("crit", "token rejected – restart subtrk serve and open the fresh URL");
       schedule(FALLBACK_MS);
       return;
     }
@@ -488,7 +488,7 @@ async function refresh() {
     const ms = STATUS.recheckAfter ? new Date(STATUS.recheckAfter) - now() : NaN;
     schedule(Number.isFinite(ms) && ms > 0 ? Math.max(1000, ms) : FALLBACK_MS);
   } catch (e) {
-    showBanner("warn", "cannot reach subtrk serve — is it still running?");
+    showBanner("warn", "cannot reach subtrk serve – is it still running?");
     schedule(FALLBACK_MS);
   } finally {
     inFlight = false;
@@ -506,7 +506,7 @@ addEventListener("hashchange", () => {
 });
 
 // Theme: follows the OS until toggled; the choice is a per-browser convenience only.
-// (Only the theme is persisted — the bearer token never touches storage.)
+// (Only the theme is persisted – the bearer token never touches storage.)
 const root = document.documentElement;
 try { const t = localStorage.getItem("subtrk-theme"); if (t) root.dataset.theme = t; } catch {}
 $("theme").onclick = () => {

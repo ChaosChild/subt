@@ -1,13 +1,13 @@
-// opencode — Zen pay-as-you-go, presence check only (D1): no usage/balance API exists.
+// opencode – Zen pay-as-you-go, presence check only (D1): no usage/balance API exists.
 // Key from env OPENCODE_API_KEY (core merges ~/.subtrk/env) or ~/.local/share/opencode/auth.json.
-// ttlMs 0 — bypasses the cache entirely.
+// ttlMs 0 – bypasses the cache entirely.
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ProviderModule, ProviderResult } from "../core.ts";
 
-export const OPENCODE_NOTE = "PAYG — no usage/balance API; inference errors are the only signal";
+export const OPENCODE_NOTE = "PAYG – no usage/balance API; inference errors are the only signal";
 
 // Pure: auth.json shape is { opencode: { key: "..." } }.
 export function extractOpencodeKey(authObj: unknown): string | null {
@@ -26,7 +26,7 @@ async function getSecret(name: string): Promise<string | undefined> {
       if (s) return s;
     }
   } catch {
-    // core not present — process.env only
+    // core not present – process.env only
   }
   return undefined;
 }
@@ -36,7 +36,7 @@ async function registerSecret(secret: string): Promise<void> {
     const core = (await import("../core.ts")) as { registerSecret?: (s: string) => void };
     if (typeof core.registerSecret === "function") core.registerSecret(secret);
   } catch {
-    // core not present — local-variable discipline applies
+    // core not present – local-variable discipline applies
   }
 }
 
@@ -50,7 +50,7 @@ async function probeInner(): Promise<ProviderResult> {
           JSON.parse(readFileSync(join(homedir(), ".local", "share", "opencode", "auth.json"), "utf8")),
         ) ?? undefined;
     } catch {
-      // absent or unreadable — treated as no key
+      // absent or unreadable – treated as no key
     }
   }
   if (!key) {

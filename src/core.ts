@@ -1,4 +1,4 @@
-// core.ts — types, config, env secrets, redaction, TTL cache, fetch helpers,
+// core.ts – types, config, env secrets, redaction, TTL cache, fetch helpers,
 // and scheduling math for subtrk. Pure logic; every path is a parameter
 // (defaulting to SUBTRK_DIR) so tests can inject temp dirs.
 
@@ -95,12 +95,12 @@ try {
   const legacy = join(homedir(), ".subt");
   if (existsSync(legacy) && !existsSync(SUBTRK_DIR)) renameSync(legacy, SUBTRK_DIR);
 } catch {
-  /* best effort — a failure just means re-running `subtrk init` */
+  /* best effort – a failure just means re-running `subtrk init` */
 }
 export const ALL_PROVIDER_IDS: readonly ProviderId[] = ["claude", "glm", "alibaba", "google", "opencode", "openrouter"];
 export const PROBE_TIMEOUT_MS = 10_000;
 // --fresh never bypasses these providers' TTL floors (claude's usage endpoint
-// has UA-keyed 429 buckets — spec §Cache TTL table).
+// has UA-keyed 429 buckets – spec §Cache TTL table).
 export const FRESH_FLOOR_IDS: readonly ProviderId[] = ["claude"];
 
 const SCHEMA_VERSION = 1;
@@ -255,7 +255,7 @@ export function readCacheEntry(cachePath: string, id: string): CacheHit | null {
   try {
     text = readFileSync(cachePath, "utf8");
   } catch {
-    return null; // absent — a plain miss
+    return null; // absent – a plain miss
   }
   let parsed: unknown;
   try {
@@ -266,7 +266,7 @@ export function readCacheEntry(cachePath: string, id: string): CacheHit | null {
     } catch {
       /* best effort */
     }
-    return null; // corrupt — miss and delete
+    return null; // corrupt – miss and delete
   }
   const file = parsed as { schemaVersion?: unknown } & Record<string, unknown>;
   if (!file || typeof file !== "object" || file.schemaVersion !== SCHEMA_VERSION) {
@@ -275,7 +275,7 @@ export function readCacheEntry(cachePath: string, id: string): CacheHit | null {
     } catch {
       /* best effort */
     }
-    return null; // schema mismatch — discard the file
+    return null; // schema mismatch – discard the file
   }
   const entry = file[id] as { data?: unknown; fetchedAt?: unknown } | undefined;
   if (
@@ -291,7 +291,7 @@ export function readCacheEntry(cachePath: string, id: string): CacheHit | null {
 }
 
 // Temp file + rename, up to 4 retries with 25–100ms backoff, then silent
-// give-up — a lost write costs one future re-probe, it is never an error.
+// give-up – a lost write costs one future re-probe, it is never an error.
 export async function writeCacheEntry(
   cachePath: string,
   id: string,
@@ -305,7 +305,7 @@ export async function writeCacheEntry(
       const parsed = JSON.parse(readFileSync(cachePath, "utf8")) as Record<string, unknown>;
       if (parsed && typeof parsed === "object" && parsed.schemaVersion === SCHEMA_VERSION) file = parsed;
     } catch {
-      /* absent or corrupt — start a fresh file */
+      /* absent or corrupt – start a fresh file */
     }
     file[id] = { data, fetchedAt: Date.parse(data.fetchedAt) || Date.now(), ttlMs };
     const payload = JSON.stringify({ ...file, schemaVersion: SCHEMA_VERSION });
@@ -448,7 +448,7 @@ export async function fetchProvider(p: ProviderModule, opts: FetchOpts = {}): Pr
   try {
     if (!held) {
       // Contender: lock held by a live process. Wait ~750ms, re-check the
-      // cache once, then probe anyway — one bounded duplicate probe.
+      // cache once, then probe anyway – one bounded duplicate probe.
       await sleep(opts.contenderWaitMs ?? CONTENDER_WAIT_MS);
       const again = readCacheEntry(cachePath, p.id);
       if (again && !opts.fresh && Date.now() - again.fetchedAt < p.ttlMs) {
@@ -574,7 +574,7 @@ export function computeNextEvent(
   };
 }
 
-// now + clamp(min ttl of ok providers, 60s, 300s) — the scheduler heartbeat.
+// now + clamp(min ttl of ok providers, 60s, 300s) – the scheduler heartbeat.
 export function computeRecheckAfter(okTtlsMs: number[], nowMs: number = Date.now()): string {
   const min = okTtlsMs.length > 0 ? Math.min(...okTtlsMs) : 300_000;
   const clamped = Math.min(300_000, Math.max(60_000, min));
@@ -598,7 +598,7 @@ export async function collectStatus(
   const requested = opts.requested !== undefined && opts.requested.length > 0 ? new Set<string>(opts.requested) : null;
   const selected = registry.filter((m) => enabled.includes(m.id) && (!requested || requested.has(m.id)));
   if (selected.length === 0) {
-    throw new Error("no providers selected — check ~/.subtrk/config.json or --provider");
+    throw new Error("no providers selected – check ~/.subtrk/config.json or --provider");
   }
   const fresh = opts.fresh === true;
   if (fresh && selected.some((m) => (FRESH_FLOOR_IDS as readonly string[]).includes(m.id))) {

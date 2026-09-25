@@ -1,15 +1,14 @@
 {
   "name": "subtrk",
   "version": "0.1.0",
-  "description": "One command for all your AI subscription quotas — agent-first usage tracking across Claude, GLM, Alibaba, Google, OpenCode Zen and OpenRouter",
+  "description": "One command for all your AI subscription quotas – agent-first usage tracking across Claude, GLM, Alibaba, Google, OpenCode Zen and OpenRouter",
   "bin": {
-    "subtrk": "./src/cli.ts"
+    "subtrk": "src/cli.ts"
   },
   "type": "module",
   "engines": {
     "node": ">=22.18"
   },
-  "private": true,
   "scripts": {
     "test": "node --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit",

@@ -1,7 +1,7 @@
-// serve.ts — `subtrk serve` (M2): the localhost web console backend.
+// serve.ts – `subtrk serve` (M2): the localhost web console backend.
 // Loopback-only HTTP: the browser shell (src/console.html) is the one static
 // route; /api/status replays `subtrk status --json` behind a per-run Bearer
-// token. No CORS headers, ever — same-origin plus the custom Authorization
+// token. No CORS headers, ever – same-origin plus the custom Authorization
 // header (preflight) is the cross-site defense. Probe work inherits core's
 // 10s per-provider budget, so every request is bounded.
 
@@ -15,7 +15,7 @@ export interface ServeDeps {
   providers?: ProviderModule[]; // stub registry (tests)
   subtrkDir?: string; // override ~/.subtrk (tests)
   consoleHtmlPath?: string; // shell served at / (default: src/console.html next to this module)
-  port?: number; // default 0 — random ephemeral port
+  port?: number; // default 0 – random ephemeral port
 }
 
 export interface ServeHandle {
@@ -132,12 +132,12 @@ export async function startConsole(deps: ServeDeps = {}): Promise<ServeHandle> {
   };
 }
 
-// CLI entry: listen, print the one URL — the token rides the fragment and is
-// never written anywhere else — then sit quiet until SIGINT/SIGTERM (exit 0).
+// CLI entry: listen, print the one URL – the token rides the fragment and is
+// never written anywhere else – then sit quiet until SIGINT/SIGTERM (exit 0).
 export async function runServe(deps: ServeDeps = {}): Promise<void> {
   const h = await startConsole(deps);
   console.log(`http://127.0.0.1:${h.port}/#${h.token}`);
-  console.log("token auth required — API calls need Authorization: Bearer <token>");
+  console.log("token auth required – API calls need Authorization: Bearer <token>");
   const stop = (): void => {
     const force = setTimeout(() => process.exit(0), 1000);
     void h.close().finally(() => {
