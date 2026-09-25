@@ -115,6 +115,23 @@ export function googleExpired(creds: GoogleCreds, nowMs: number): boolean {
   return nowMs >= creds.expiresAtMs - SKEW_MS;
 }
 
+// Shared expired-token wording for the keyring pre-flight and the 401-after-reread
+// path – one object, so both triggers give operators identical guidance.
+const KEYRING_EXPIRED_ERROR: ProviderError = {
+  kind: "expired-token",
+  message: "token rejected (401, also after one credential re-read)",
+  hint: "launch agy once so it refreshes its token, then re-run",
+  remedy: "re-login inside agy",
+};
+
+// Pure: probe-path pre-flight – an expired blob cannot survive the quota fetch, so
+// report the shared expired-token error up front; null when the fetch is worth trying.
+export function googlePreFlight(creds: GoogleCreds, nowMs: number): ProviderError | null {
+  if (typeof creds.expiresAtMs !== "number" || !Number.isFinite(creds.expiresAtMs)) return null;
+  if (!googleExpired(creds, nowMs)) return null;
+  return KEYRING_EXPIRED_ERROR;
+}
+
 // Pure: "Gemini Models" -> "gemini-models".
 export function slugify(name: string): string {
   return name
@@ -408,10 +425,15 @@ async function probeInner(): Promise<ProviderResult> {
   await registerCreds(found.creds);
 
   let token = found.creds.accessToken;
-  // Keyring tokens are refreshed in place by agy – no expiry pre-check and no local
-  // refresh; the 401 path below re-reads the blob once. File lineages keep the
-  // expiry check + refresh (write-back for the gemini lineage only).
-  if (found.creds.lineage !== "agy-keyring" && googleExpired(found.creds, Date.now())) {
+  // Keyring tokens are refreshed in place by agy – no local refresh; the pre-flight
+  // below fails an already-expired blob fast and the 401 path re-reads the blob once
+  // for the rest. File lineages keep the expiry check + refresh (write-back for the
+  // gemini lineage only).
+  if (found.creds.lineage === "agy-keyring") {
+    // Expired per blob -> skip the doomed fetch; avoids the timeout masking the real error.
+    const pre = googlePreFlight(found.creds, Date.now());
+    if (pre) return fail(pre, fetchedAt);
+  } else if (googleExpired(found.creds, Date.now())) {
     if (!found.creds.refreshToken) {
       return fail(
         {
@@ -441,15 +463,7 @@ async function probeInner(): Promise<ProviderResult> {
     }
     out = await postJson(`${PRIMARY_HOST}${QUOTA_PATH}`, {}, token);
     if (!out.ok && out.status === 401) {
-      return fail(
-        {
-          kind: "expired-token",
-          message: "token rejected (401, also after one credential re-read)",
-          hint: "launch agy once so it refreshes its token, then re-run",
-          remedy: "re-login inside agy",
-        },
-        fetchedAt,
-      );
+      return fail(KEYRING_EXPIRED_ERROR, fetchedAt);
     }
   }
   if (!out.ok && (out.status === 403 || out.status === 404)) {
