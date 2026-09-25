@@ -62,10 +62,18 @@ test("claude parseClaudeUsage maps the fixture to 5h/7d windows", () => {
   ]);
 });
 
+test("claude parseClaudeUsage maps the inactive-session fixture to only the active 7d window", () => {
+  const parsed = parseClaudeUsage(fixture("claude-usage-inactive"));
+  assert.ok(parsed);
+  assert.deepEqual(parsed.windows, [{ kind: "7d", usedPercent: 27, resetsAt: "2026-09-27T00:59:59.801Z" }]);
+});
+
 test("claude parseClaudeUsage rejects missing keys and non-objects", () => {
   assert.equal(parseClaudeUsage({}), null);
   assert.equal(parseClaudeUsage({ five_hour: { utilization: 1 } }), null); // resets_at missing
+  assert.equal(parseClaudeUsage({ five_hour: { utilization: 1, resets_at: null } }), null); // only window inactive
   assert.equal(parseClaudeUsage({ five_hour: { utilization: 1, resets_at: "nope" } }), null);
+  assert.equal(parseClaudeUsage({ five_hour: { utilization: 1, resets_at: 5 } }), null); // number resets_at still fails
   assert.equal(parseClaudeUsage("garbage"), null);
 });
 
