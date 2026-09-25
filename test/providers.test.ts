@@ -160,10 +160,19 @@ test("glm parseGlmQuota: unit 6 with number 1 is '7d', numeric level is stringif
   assert.equal(parsed.plan, "GLM 4");
 });
 
-test("glm parseGlmQuota rejects missing data.limits", () => {
-  assert.equal(parseGlmQuota({}), null);
-  assert.equal(parseGlmQuota({ data: {} }), null);
-  assert.equal(parseGlmQuota({ data: { limits: "nope" } }), null);
+test("glm parseGlmQuota: object body without data.limits is the empty state, non-object JSON is null", () => {
+  for (const body of [{}, { data: null }, { data: {} }, { data: { limits: "nope" } }]) {
+    const empty = parseGlmQuota(body);
+    assert.ok(empty, JSON.stringify(body));
+    assert.deepEqual(empty.windows, []);
+    assert.equal(empty.empty, true);
+  }
+  // level still parses in the empty state
+  assert.deepEqual(parseGlmQuota({ data: { level: "max" } }), { windows: [], plan: "GLM max", empty: true });
+  // bodies that are not JSON objects at all stay null (probe maps that to parse-failure)
+  assert.equal(parseGlmQuota([]), null);
+  assert.equal(parseGlmQuota("str"), null);
+  assert.equal(parseGlmQuota(null), null);
 });
 
 test("glm glmAuth: config key + host origin from baseURL, env fallback, null when neither", () => {

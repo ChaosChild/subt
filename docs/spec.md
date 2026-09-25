@@ -254,6 +254,11 @@ where fetch is used).
   `number`×hours, i.e. the 5h window) and `unit` 6 = weeks (weekly window).
   `percentage` = used %, `nextResetTime` = Unix **ms** → `resetsAt`. `data.level`
   → plan label. `TIME_LIMIT` entries are built-in-tool quota – ignored in v0.
+- Empty state: a 200 body with no `data.limits` (data missing/null or no limits
+  array) is the **post-reset idle window**, not an error – limits appear after the
+  first query. Probe reports ok with `windows: []` and note "no usage reported yet
+  in the current window – appears after the first GLM query". Only a body that is
+  not a JSON object at all stays a `parse-failure`.
 - 401 → `no-credentials` (hint `check ZCode login`).
 
 ### alibaba – Model Studio Token Plan (international, credits)
