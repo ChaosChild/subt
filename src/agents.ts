@@ -46,9 +46,15 @@ export const AGENT_SECTION_END = "<!-- subtrk:end -->";
 export const AGENT_SECTION = `<!-- subtrk:begin -->
 ## subtrk
 
-\`subtrk\` reports remaining quota for the AI plans configured on this machine
-(the providers its contributors use today). Plain \`subtrk\` or \`subtrk status\`
-prints a compact view; \`subtrk status --json\` is the machine-readable contract:
+\`subtrk\` reports remaining quota for the AI plans configured on this machine.
+Use it before committing to large or long-running work on a provider –
+discovering a rate limit mid-task wastes the work – when a provider starts
+failing with quota or rate-limit errors, and on wake-ups: \`recheckAfter\` and
+\`nextEvent.at\` say when new information can exist, so schedule around them
+instead of polling.
+
+Plain \`subtrk\` or \`subtrk status\` prints a compact view; \`subtrk status --json\`
+is the machine-readable contract:
 
 - \`providers[].windows[]\` – per-provider usage windows with \`usedPercent\` and \`resetsAt\` (ISO-8601 UTC)
 - \`nextEvent.at\` – the earliest time new information can exist; schedule wake-ups there, never poll
@@ -56,7 +62,8 @@ prints a compact view; \`subtrk status --json\` is the machine-readable contract
 - \`error.kind\` – branch on it, never on message text; \`error.remedy\` is the exact command that fixes the error
 - exit codes: 0 ran · 1 runtime failure · 2 usage error · 3 --strict violation
 - plain calls go through a shared TTL cache and are polite; \`--fresh\` only when a result is actively stale
-- a \`remedy\` of \`subtrk auth refresh --provider <id>\` opens a browser tab – tell the operator and ask before running it; any other remedy needs operator action – surface it verbatim
+- when an error's \`remedy\` is \`subtrk auth refresh --provider <id>\`, the provider's login expired – you may run that command yourself, but it opens a browser tab on this machine: tell the operator first and wait for their go
+- any other remedy is an interactive operator step (logins, setup prompts) – surface it verbatim instead of attempting it
 - a missing provider means the plan is not configured on this machine, not an error
 <!-- subtrk:end -->`;
 
