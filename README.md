@@ -2,7 +2,8 @@
 
 **AI subscription quotas in one command.** `subtrk` reports remaining usage for
 the plans its contributors use – today Claude Pro, Z.ai GLM Coding Plan, Alibaba
-Cloud Model Studio, Google AI Pro, OpenCode Zen and OpenRouter – in one compact
+Cloud Model Studio, Google AI Pro, OpenCode Zen, OpenRouter and the ChatGPT
+plans (via the OpenAI Codex CLI) – in one compact
 view, designed first for the AI agents that work for you and second for you.
 Coverage expands as needs or requests come in: adding a provider is a contained
 change (see the [implementation guide](docs/implementation-plan.md)), and PRs
@@ -105,7 +106,7 @@ npm link          # puts `subtrk` on PATH (subtrk.cmd on Windows)
 with numbers and/or ids (e.g. `1 3 5` or `claude, google`) – and stores the
 selection in `~/.subtrk/config.json`; the checks below then only cover those.
 Edit the file or re-run `subtrk init` to change the selection, delete it to
-track all six again. It runs the Alibaba login flow (`bl auth login --api-key` +
+track all seven again. It runs the Alibaba login flow (`bl auth login --api-key` +
 `--console` browser login), prompts for OpenRouter keys (hidden input, saved to
 `~/.subtrk/env`), and verifies each provider honestly – `[ok]` only when a
 credential actually works.
@@ -120,6 +121,7 @@ credential actually works.
 | Google | AI Pro (personal) | agy's Credential Manager token → Code Assist quota summary (body `{}`, UA `antigravity`); read-only self-refresh | per-family 5h/7d (gemini + claude-and-gpt families) | best-effort – degrades to `agy /usage` |
 | OpenCode | Zen pay-as-you-go | no usage/balance API exists for PAYG | – | signals only (honest note) |
 | OpenRouter | pay-as-you-go | `/api/v1/key` (+ `/api/v1/credits` with a management key) | – | official |
+| OpenAI | ChatGPT plan via Codex | the Codex CLI's own ChatGPT usage endpoint, read from its stored login | free: one 30-day window; paid: 5h + weekly | official client endpoint, not a documented public API |
 
 None of these vendors officially supports third-party quota readers except Alibaba
 and OpenRouter; the others are the same calls their own CLIs make, and can change.
@@ -159,7 +161,7 @@ meantime – no intervention needed.
   `OPENCODE_API_KEY` (dotenv format; process env wins). Written by `subtrk init`.
 - Everything else is read from the credential files your CLIs already own:
   `~/.claude/.credentials.json`, `~/.zcode/cli/config.json`, `~/.gemini/*`,
-  `~/.local/share/opencode/auth.json`, `bl`'s own store.
+  `~/.codex/auth.json`, `~/.local/share/opencode/auth.json`, `bl`'s own store.
 
 ## Security notes
 
@@ -176,7 +178,7 @@ meantime – no intervention needed.
 
 - [`docs/spec.md`](docs/spec.md) – full CLI specification (output contract, cache,
   provider integrations, `subtrk init`).
-- [`docs/decisions.md`](docs/decisions.md) – design decisions D1–D9 with rationale.
+- [`docs/decisions.md`](docs/decisions.md) – design decisions D1–D10 with rationale.
 - [`docs/implementation-plan.md`](docs/implementation-plan.md) – implementation
   guide: layout, coding rules, how to add a provider.
 - [`docs/phases.md`](docs/phases.md) – roadmap (web console done; M3 analytics

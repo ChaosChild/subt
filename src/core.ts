@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 
 // ---------- shared contract (docs/spec.md §ProviderResult) ----------
 
-export type ProviderId = "claude" | "glm" | "alibaba" | "google" | "opencode" | "openrouter";
+export type ProviderId = "claude" | "glm" | "alibaba" | "google" | "opencode" | "openrouter" | "openai";
 
 export type ErrorKind =
   | "no-credentials"
@@ -106,7 +106,15 @@ try {
 } catch {
   /* best effort – a failure just means re-running `subtrk init` */
 }
-export const ALL_PROVIDER_IDS: readonly ProviderId[] = ["claude", "glm", "alibaba", "google", "opencode", "openrouter"];
+export const ALL_PROVIDER_IDS: readonly ProviderId[] = [
+  "claude",
+  "glm",
+  "alibaba",
+  "google",
+  "opencode",
+  "openrouter",
+  "openai",
+];
 export const PROBE_TIMEOUT_MS = 10_000;
 // --fresh never bypasses these providers' TTL floors (claude's usage endpoint
 // has UA-keyed 429 buckets – spec §Cache TTL table).

@@ -70,7 +70,7 @@ actually observe, given the cache), not the raw reset instant. Schedulers wake t
 ### ProviderResult
 
 ```ts
-type ProviderId = "claude" | "glm" | "alibaba" | "google" | "opencode" | "openrouter";
+type ProviderId = "claude" | "glm" | "alibaba" | "google" | "opencode" | "openrouter" | "openai";
 
 type ErrorKind =
   | "no-credentials"      // credential file/env/key absent
@@ -175,6 +175,7 @@ Default TTLs (the policy – no user knobs in v0):
 | google | 60 000 | be politer than gemini-cli's own 30s |
 | alibaba | 300 000 | bl subprocess is slow; don't spam |
 | openrouter | 60 000 | official API, cheap |
+| openai | 60 000 | vendor's own client endpoint, cheap |
 | opencode | 0 | local presence check only – bypasses cache entirely |
 
 ## Configuration & secrets
@@ -366,9 +367,42 @@ inference). Absent everywhere → `no-credentials`, hint `run subtrk init or ope
   **Never** attempt /credits with the inference key (guaranteed 403).
 - Missing key → `no-credentials`, hint `run subtrk init`.
 
+### openai – ChatGPT plan via the Codex CLI
+
+- Credential: `~/.codex/auth.json`, read-only, never written. Used only when
+  `auth_mode` is `"chatgpt"` with a non-empty string `tokens.access_token`.
+  Account id: `tokens.account_id`, else `chatgpt_account_id` decoded from the
+  `id_token` JWT payload (base64url middle segment). A file with no tokens but
+  an `OPENAI_API_KEY` → `no-credentials` ("auth.json holds an API key, not a
+  ChatGPT login", hint `run codex login (plan usage needs a ChatGPT account)`);
+  no file / unparseable → `no-credentials` ("no Codex credentials at
+  ~/.codex/auth.json", hint `run codex login`).
+- `GET https://chatgpt.com/backend-api/wham/usage` – the endpoint the vendor's
+  own open-source Codex client uses (contract-tested in its Apache-2.0 source;
+  not a documented public API) – with headers `Authorization: Bearer
+  <access_token>`, `ChatGPT-Account-Id: <account_id>`, `User-Agent: codex-cli`.
+- Parse: `rate_limit.primary_window` plus optional `secondary_window` (null →
+  skipped, like claude's inactive windows) → windows. `used_percent` is a used
+  % (claude/glm convention); `limit_window_seconds` names the kind (18000 →
+  `5h`, 604800 → `7d`, 2592000 → `30d`, then whole days/hours, else a rounded
+  hour estimate) – the payload is self-describing: free = one monthly window,
+  paid = 5h + weekly. `reset_at` is epoch **seconds** → ISO (fallback
+  `now + reset_after_seconds`); neither → parse-failure. `plan_type` → plan
+  label `ChatGPT <plan_type>`. Strict, claude-style: a missing/absent primary
+  window (or missing `rate_limit`, or non-object body) is a parse-failure,
+  never an empty state – every observed response carries a primary window.
+  credits, spend_control, promo, additional_rate_limits and
+  code_review_rate_limit are not surfaced in v1.
+- 401: codex owns its login (access tokens live ~10 days; codex refreshes them
+  itself while it runs), so subtrk never refreshes – on 401 the credential file
+  is re-read once and the call retried with a changed token; still 401 →
+  `expired-token`, hint `launch codex once so it refreshes its login, or run
+  codex login`. No `refresh()` on the module (rotation behavior deliberately
+  untested) – openai is not refreshable.
+
 ## `subtrk init` (one-time interactive setup)
 
-First, init asks which providers to track: a numbered listing of all six,
+First, init asks which providers to track: a numbered listing of all seven,
 answered with numbers and/or ids (`1 3 5`, `claude, google`); empty input keeps
 the current selection, invalid input re-prompts (bounded), and non-TTY stdin
 skips the question. The answer is stored as `~/.subtrk/config.json`
@@ -402,6 +436,9 @@ Checks, in order, printing a checklist with pass/fail per provider:
 5. opencode: `auth.json` or key present → else offer to store one in `~/.subtrk/env`.
 6. OpenRouter: hidden-input prompts for `OPENROUTER_API_KEY` and optional
    `OPENROUTER_MANAGEMENT_KEY`, written to `~/.subtrk/env` (created if absent).
+7. OpenAI: check-only, nothing to collect – `~/.codex/auth.json` parses as a
+   ChatGPT login → `[ok]`; else `[missing]` with the honest message (API-key
+   mode included) and `codex login` as the fix.
 
 `subtrk init` never sends a secret anywhere except the owning provider's endpoint, and
 never writes secrets anywhere except `~/.subtrk/env` and vendor-owned files.

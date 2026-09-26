@@ -143,3 +143,20 @@ re-probes. Google is refreshable too (D7): its refresh re-mints the access
 token read-only from the stored non-rotating refresh token. Providers without
 interactive refresh emit errors that carry a `remedy` line naming the fix
 instead.
+
+## D10 · OpenAI – the Codex CLI's stored ChatGPT login, read-only
+
+subtrk reads `~/.codex/auth.json` (read-only) and calls the usage endpoint the
+vendor's own open-source Codex client uses: `GET
+chatgpt.com/backend-api/wham/usage` with the stored access token, the account
+id and `User-Agent: codex-cli`. The endpoint is undocumented but vendor-owned
+and contract-tested in the client's Apache-2.0 source – the same trust level
+as the other CLIs' own calls, and it can change.
+
+Codex owns the login: it refreshes its ~10-day access token itself while it
+runs. subtrk therefore never refreshes – on 401 it re-reads the credential
+file once and retries with a changed token, and the module deliberately has no
+`refresh()` (rotation behavior untested), so openai is not refreshable.
+Nothing is ever written to the credential file; the auth file's API-key mode
+(OPENAI_API_KEY, no ChatGPT tokens) reports `no-credentials` honestly instead
+of pretending to read a plan.
