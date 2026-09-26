@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 // ./providers/index.ts (allProviders) and is imported lazily (from collectStatus)
 // so tests can inject a stub registry via main()'s deps seam.
 import { parseArgs } from "node:util";
+import { printAgentListing } from "./agents.ts";
 import {
   ALL_PROVIDER_IDS,
   type Credits,
@@ -27,6 +28,7 @@ import { runServe } from "./serve.ts";
 
 export interface CliDirs {
   subtrk?: string; // override ~/.subtrk (tests)
+  agentsDir?: string; // base for agent instruction files (replaces homedir; tests)
 }
 
 export interface CliDeps {
@@ -43,6 +45,8 @@ usage:
   subtrk                  same as: subtrk status
   subtrk status [flags]   probe enabled providers, compact text
   subtrk init             one-time interactive setup
+  subtrk init --agent <id>  write agent instructions for a harness and exit
+                          (claude|zcode|codex|opencode|agy)
   subtrk auth refresh     re-authorise one provider interactively (--provider <id>)
   subtrk serve            local web console (loopback only)
 
@@ -68,7 +72,12 @@ const INIT_USAGE = `subtrk init – one-time interactive setup
 Checks every provider, offers installs and logins where missing, and writes
 new secrets to ~/.subtrk/env (mode 0600 on POSIX). Secrets are never echoed.
 
+--agent <id> skips all of that: it only writes subtrk's instruction section
+into harness <id>'s global instructions file (claude|zcode|codex|opencode|agy)
+and exits. Idempotent – only subtrk's own marked block is touched.
+
 flags:
+  --agent <id>  install agent instructions for <id>, no interaction
   -h, --help    this screen`;
 
 // ---------- text rendering (spec §Text format) ----------
@@ -189,11 +198,15 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
         fresh: { type: "boolean", default: false },
         strict: { type: "boolean", default: false },
         port: { type: "string" },
+        agent: { type: "string" },
         help: { type: "boolean", short: "h", default: false },
       },
     });
   } catch (err) {
-    console.error(`subtrk: ${errorMessage(err)}`);
+    const msg = errorMessage(err);
+    console.error(`subtrk: ${msg}`);
+    // a bare `--agent` (no value) lands here – same listing as an unknown name
+    if (msg.includes("--agent")) printAgentListing(deps.dirs?.agentsDir);
     return 2;
   }
   const positionals = parsed.positionals;
@@ -216,6 +229,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     fresh,
     strict,
     port,
+    agent,
     help,
   } = parsed.values as {
     json?: boolean;
@@ -224,6 +238,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     fresh?: boolean;
     strict?: boolean;
     port?: string;
+    agent?: string;
     help?: boolean;
   };
   if (help) {
@@ -232,8 +247,12 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
   }
   if (cmd === "init") {
     try {
-      await runInit({ subtrkDir: deps.dirs?.subtrk });
-      return 0;
+      const code = await runInit({
+        subtrkDir: deps.dirs?.subtrk,
+        agent,
+        agentsDir: deps.dirs?.agentsDir,
+      });
+      return code ?? 0;
     } catch (err) {
       console.error(`subtrk: ${errorMessage(err)}`);
       return 1;

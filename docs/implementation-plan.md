@@ -10,6 +10,7 @@ src/cli.ts            entry point: arg parsing, orchestration, rendering, exit c
 src/serve.ts          the `subtrk serve` web console backend (see docs/spec.md)
 src/console.html      the console dashboard page (served at /)
 src/init.ts           one-time interactive setup (the only interactive command)
+src/agents.ts         agent harness targets + the marked instructions section (`subtrk init --agent`)
 src/core.ts           types, config, ~/.subtrk/env parser, TTL cache, redaction, scheduling math, collectStatus
 src/providers/*.ts    one module per provider – the only code that knows endpoints
 test/*.test.ts        node:test suites (fixtures only; tests never touch the network)
@@ -66,6 +67,13 @@ so tests can exercise them against fixtures without network access.
 4. If setup is needed, extend `subtrk init` with an honest per-step result line.
 5. Document the integration in `docs/spec.md` §Provider integrations and add a
    row to the README provider table.
+6. Check the agent-instructions blurb (`AGENT_SECTION` in `src/agents.ts`):
+   it enumerates the tracked plans' contract for other agents, so a new
+   provider may need the text updated.
+
+Agent harness support (`subtrk init --agent`) is one table: add an
+`AGENT_TARGETS` entry in `src/agents.ts`. A verified global path is required –
+research the harness's official docs/source before writing one.
 
 ## Testing
 
