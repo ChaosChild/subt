@@ -1,11 +1,14 @@
 // init.ts – `subtrk init`: one-time interactive setup (spec §subtrk init).
 // Checks every tracked provider, offers installs/logins, writes new secrets to
-// ~/.subtrk/env (mode 0600 on POSIX). Secrets are never echoed.
+// ~/.subtrk/env (mode 0600 on POSIX). Secrets are never echoed. `--agent <id>`
+// skips all interaction: it only writes the agent instructions section.
 import { execFile, spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
+import type { AgentTarget } from "./agents.ts";
+import { AGENT_SECTION, agentTargets, applyAgentSection, printAgentListing } from "./agents.ts";
 import type { ProviderId } from "./core.ts";
 import { ALL_PROVIDER_IDS, getSecret, loadConfig, registerSecret, SUBTRK_DIR, scrub } from "./core.ts";
 import { claudeAuth } from "./providers/claude.ts";
@@ -13,6 +16,8 @@ import { parseOpenaiAuth } from "./providers/openai.ts";
 
 export interface InitOpts {
   subtrkDir?: string;
+  agentsDir?: string; // base for agent instruction files (replaces homedir; tests)
+  agent?: string; // --agent <harness>: only the agent step, then exit
 }
 
 // ---------- prompts ----------
@@ -350,7 +355,24 @@ async function fetchGoogleClientConstants(): Promise<Record<string, string> | nu
   };
 }
 
-export async function runInit(opts: InitOpts = {}): Promise<void> {
+// `subtrk init --agent <harness>`: write the instructions section, print one
+// line, exit – no provider selection, no checks. Unknown name prints the
+// supported listing on stderr and exits 2.
+function agentStep(name: string, base?: string): number {
+  const targets: Record<string, AgentTarget> = agentTargets(base);
+  const target = targets[name];
+  if (!target) {
+    console.error(`subtrk: unknown agent '${name}' – supported:`);
+    printAgentListing(base);
+    return 2;
+  }
+  const { status } = applyAgentSection(target.file, AGENT_SECTION);
+  console.log(`${name} – ${status} ${target.file}`);
+  return 0;
+}
+
+export async function runInit(opts: InitOpts = {}): Promise<number | undefined> {
+  if (opts.agent !== undefined) return agentStep(opts.agent, opts.agentsDir);
   const subtrkDir = opts.subtrkDir ?? SUBTRK_DIR;
   const envPath = join(subtrkDir, "env");
   mkdirSync(subtrkDir, { recursive: true });

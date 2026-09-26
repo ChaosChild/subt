@@ -19,6 +19,7 @@ shared cache so concurrent agents never hammer provider endpoints.
 | `subtrk status --fresh` | Bypass cache TTLs once (Claude's 300s floor still applies – warns) |
 | `subtrk status --strict` | Exit 3 if any provider failed |
 | `subtrk init` | One-time interactive setup (the only interactive command) |
+| `subtrk init --agent <harness>` | Non-interactive: write subtrk's instructions into a harness's global agent file (see §`subtrk init`) |
 | `subtrk auth refresh` | Re-run one provider's interactive credential refresh (`--provider <id>`, see §`subtrk auth refresh`) |
 | `subtrk serve` | Local web console on 127.0.0.1 (see §`subtrk serve`) |
 
@@ -442,6 +443,37 @@ Checks, in order, printing a checklist with pass/fail per provider:
 
 `subtrk init` never sends a secret anywhere except the owning provider's endpoint, and
 never writes secrets anywhere except `~/.subtrk/env` and vendor-owned files.
+
+### `--agent <harness>` – install agent instructions
+
+With `--agent`, init runs no provider selection and no checks: it writes
+subtrk's instruction section into the harness's GLOBAL agent instructions
+file, prints `<harness> – created|updated <file>`, and exits. Targets (global
+paths derived from `os.homedir()`, never manual `~` expansion; verified
+2026-09-26 against each harness's official docs/source):
+
+| Harness | Global file |
+|---|---|
+| `claude` | `~/.claude/CLAUDE.md` (Claude Code global memory) |
+| `zcode` | `~/.zcode/AGENTS.md` |
+| `codex` | `~/.codex/AGENTS.md` |
+| `opencode` | `~/.config/opencode/AGENTS.md` (this exact path on Windows too) |
+| `agy` | `~/.gemini/AGENTS.md` (Antigravity global rules; `~/.gemini` by convention) |
+
+The section is delimited by `<!-- subtrk:begin -->` / `<!-- subtrk:end -->`
+sentinels (conda-init convention). Upsert rules: a file without markers gets
+the section appended with one blank line before; with markers, only the block
+between the first begin/end pair is replaced – everything outside is preserved;
+an unterminated begin marker (no end) is treated as replace-from-marker-to-EOF.
+Re-running is therefore idempotent, and removal is a clean delete of the block
+between the markers. Writes go through a temp file + rename in the target
+directory (two attempts); a failed write is reported, never silently dropped –
+the file belongs to the user.
+
+Exit codes: 0 written · 2 unknown or missing harness name – stderr then lists
+every supported harness with its file and whether the section is present right
+now, followed by
+`usage: subtrk init --agent <claude|zcode|codex|opencode|agy>`.
 
 ## `subtrk auth refresh` – interactive re-auth for one provider
 

@@ -160,3 +160,22 @@ file once and retries with a changed token, and the module deliberately has no
 Nothing is ever written to the credential file; the auth file's API-key mode
 (OPENAI_API_KEY, no ChatGPT tokens) reports `no-credentials` honestly instead
 of pretending to read a plan.
+
+## D11 · Agent instructions – opt-in via `subtrk init --agent`
+
+Teaching an agent how to call subtrk is opt-in and per-harness: `subtrk init
+--agent <harness>` appends a short instruction section to that harness's
+GLOBAL agents file (five targets, paths verified against official
+docs/source on 2026-09-26: claude, zcode, codex, opencode, agy). The section
+uses conda-init-style sentinels (`<!-- subtrk:begin -->` / `<!-- subtrk:end -->`)
+so a re-run replaces only subtrk's own block – idempotent – and removal is a
+clean delete of the block between the markers.
+
+The file belongs to the user: subtrk only ever adds or replaces its own marked
+block, never rewrites anything else – text outside the markers is preserved,
+an unterminated marker is healed (replace to EOF), and a failed write is
+reported rather than silently dropped. The blurb carries the status contract
+an agent needs (windows, `nextEvent.at` wake-ups instead of polling,
+`recheckAfter`, `error.kind`/`error.remedy`, exit codes, cache politeness) and
+tells the agent to ask the operator before any browser-opening remedy, since
+only the operator can consent to that.

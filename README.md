@@ -111,6 +111,42 @@ track all seven again. It runs the Alibaba login flow (`bl auth login --api-key`
 `~/.subtrk/env`), and verifies each provider honestly – `[ok]` only when a
 credential actually works.
 
+### Agent instructions
+
+`subtrk init --agent <harness>` appends a short marked section to a harness's
+GLOBAL agent instructions file, so the agent knows how to call subtrk:
+
+| harness | file |
+|---|---|
+| `claude` | `~/.claude/CLAUDE.md` (Claude Code global memory) |
+| `zcode` | `~/.zcode/AGENTS.md` |
+| `codex` | `~/.codex/AGENTS.md` |
+| `opencode` | `~/.config/opencode/AGENTS.md` (this exact path on Windows too) |
+| `agy` | `~/.gemini/AGENTS.md` (Antigravity; the path is `~/.gemini` by convention) |
+
+The write is idempotent – re-running replaces only subtrk's block between the
+`<!-- subtrk:begin -->` / `<!-- subtrk:end -->` markers and never touches
+anything else; to remove it, delete the block between the markers. On any other
+harness, paste this body into its instructions file manually (without the
+markers – `subtrk init --agent` wraps it in them):
+
+```markdown
+## subtrk
+
+`subtrk` reports remaining quota for the AI plans configured on this machine
+(the providers its contributors use today). Plain `subtrk` or `subtrk status`
+prints a compact view; `subtrk status --json` is the machine-readable contract:
+
+- `providers[].windows[]` – per-provider usage windows with `usedPercent` and `resetsAt` (ISO-8601 UTC)
+- `nextEvent.at` – the earliest time new information can exist; schedule wake-ups there, never poll
+- `recheckAfter` – heartbeat when no `nextEvent` applies
+- `error.kind` – branch on it, never on message text; `error.remedy` is the exact command that fixes the error
+- exit codes: 0 ran · 1 runtime failure · 2 usage error · 3 --strict violation
+- plain calls go through a shared TTL cache and are polite; `--fresh` only when a result is actively stale
+- a `remedy` of `subtrk auth refresh --provider <id>` opens a browser tab – tell the operator and ask before running it; any other remedy needs operator action – surface it verbatim
+- a missing provider means the plan is not configured on this machine, not an error
+```
+
 ## Providers
 
 | Provider | Plan | Reads | Windows | Status |
@@ -178,7 +214,7 @@ meantime – no intervention needed.
 
 - [`docs/spec.md`](docs/spec.md) – full CLI specification (output contract, cache,
   provider integrations, `subtrk init`).
-- [`docs/decisions.md`](docs/decisions.md) – design decisions D1–D10 with rationale.
+- [`docs/decisions.md`](docs/decisions.md) – design decisions D1–D11 with rationale.
 - [`docs/implementation-plan.md`](docs/implementation-plan.md) – implementation
   guide: layout, coding rules, how to add a provider.
 - [`docs/phases.md`](docs/phases.md) – roadmap (web console done; M3 analytics

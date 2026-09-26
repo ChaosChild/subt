@@ -430,6 +430,49 @@ describe("auth refresh", () => {
   });
 });
 
+describe("init --agent", () => {
+  it("unknown name exits 2 with the five-harness listing on stderr", async () => {
+    const cap = captureConsole();
+    try {
+      const code = await main(["init", "--agent", "nope"], {
+        providers: [],
+        dirs: { subtrk: tempSubtrkDir(), agentsDir: tempSubtrkDir() },
+      });
+      assert.equal(code, 2);
+      const text = cap.err.join("\n");
+      for (const id of ["claude", "zcode", "codex", "opencode", "agy"]) {
+        assert.match(text, new RegExp(`^  ${id} – `, "m"));
+      }
+      assert.match(text, /usage: subtrk init --agent <claude\|zcode\|codex\|opencode\|agy>/);
+      assert.equal(cap.out.length, 0);
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it("known name writes the section under the injected base; re-run is idempotent", async () => {
+    const agentsDir = tempSubtrkDir();
+    const dirs = { subtrk: tempSubtrkDir(), agentsDir };
+    const cap = captureConsole();
+    try {
+      assert.equal(await main(["init", "--agent", "claude"], { providers: [], dirs }), 0);
+      const file = join(agentsDir, ".claude", "CLAUDE.md");
+      const first = readFileSync(file, "utf8");
+      assert.equal(first.split("<!-- subtrk:begin -->").length - 1, 1);
+      assert.match(cap.out[0], /^claude – created /);
+      assert.equal(await main(["init", "--agent", "claude"], { providers: [], dirs }), 0);
+      assert.equal(
+        readFileSync(file, "utf8").split("<!-- subtrk:begin -->").length - 1,
+        1,
+        "second run must not duplicate the section",
+      );
+      assert.match(cap.out[1], /^claude – updated /);
+    } finally {
+      cap.restore();
+    }
+  });
+});
+
 describe("scrub reaches rendered output", () => {
   it("registered secrets cannot appear in text or JSON lines", async () => {
     const { registerSecret, clearSecrets } = await import("../src/core.ts");
