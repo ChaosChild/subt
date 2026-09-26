@@ -93,7 +93,8 @@ test("parseProviderSelection: numbers, ids, keep-current, canonical order, inval
   assert.deepEqual(parseProviderSelection("", ["glm"]), ["glm"], "empty keeps the current selection");
   assert.deepEqual(parseProviderSelection("   ", ["claude", "glm"]), ["claude", "glm"]);
   assert.equal(parseProviderSelection("0", []), null, "0 is not a provider number");
-  assert.equal(parseProviderSelection("7", []), null, "past the end of the listing");
+  assert.deepEqual(parseProviderSelection("7", []), ["openai"], "openai is the seventh listing entry");
+  assert.equal(parseProviderSelection("8", []), null, "past the end of the listing");
   assert.equal(parseProviderSelection("-1", []), null);
   assert.equal(parseProviderSelection("claude bogus", []), null, "invalid token -> re-prompt signal");
 });

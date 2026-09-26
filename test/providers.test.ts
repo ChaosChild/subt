@@ -28,6 +28,7 @@ import {
   slugify,
 } from "../src/providers/google.ts";
 import { allProviders, refreshableProviders } from "../src/providers/index.ts";
+import { parseOpenaiAuth, parseOpenaiUsage, windowKindFromSeconds } from "../src/providers/openai.ts";
 import { extractOpencodeKey } from "../src/providers/opencode.ts";
 import { parseOpenrouterCredits, parseOpenrouterKey } from "../src/providers/openrouter.ts";
 
@@ -37,10 +38,10 @@ function fixture(name: string): unknown {
 
 // ---- module contract -------------------------------------------------------
 
-test("allProviders exposes the six modules in spec order with spec TTLs", () => {
+test("allProviders exposes the seven modules in spec order with spec TTLs", () => {
   assert.deepEqual(
     allProviders.map((p) => p.id),
-    ["claude", "glm", "alibaba", "google", "opencode", "openrouter"],
+    ["claude", "glm", "alibaba", "google", "opencode", "openrouter", "openai"],
   );
   const ttls: Record<string, number> = {};
   for (const p of allProviders) {
@@ -54,12 +55,14 @@ test("allProviders exposes the six modules in spec order with spec TTLs", () => 
     google: 60000,
     opencode: 0,
     openrouter: 60000,
+    openai: 60000,
   });
 });
 
 test("refreshableProviders lists exactly the modules with refresh – google self-refreshes read-only", () => {
   assert.deepEqual(refreshableProviders(), ["claude", "alibaba", "google"]);
-  for (const id of ["glm", "opencode", "openrouter"]) {
+  // openai has no refresh: codex owns its tokens and subtrk never refreshes them.
+  for (const id of ["glm", "opencode", "openrouter", "openai"]) {
     assert.equal(allProviders.find((p) => p.id === id)?.refresh, undefined);
   }
 });
@@ -462,4 +465,127 @@ test("openrouter parseOpenrouterCredits: remaining = total_credits - total_usage
   });
   assert.equal(parseOpenrouterCredits({}), null);
   assert.equal(parseOpenrouterCredits({ data: { total_credits: 1 } }), null);
+});
+
+// ---- openai ----------------------------------------------------------------
+
+test("openai parseOpenaiAuth: chatgpt login passes, account_id from the file or the id_token JWT", () => {
+  const good = parseOpenaiAuth({
+    auth_mode: "chatgpt",
+    OPENAI_API_KEY: null,
+    tokens: { id_token: "h.e30.s", access_token: "AT", refresh_token: "RT", account_id: "ACC" },
+    last_refresh: "2026-09-26T00:00:00Z",
+  });
+  assert.ok(good);
+  assert.deepEqual(good, { ok: true, accessToken: "AT", accountId: "ACC" });
+
+  const payload = Buffer.from(JSON.stringify({ chatgpt_account_id: "acc-from-jwt" })).toString("base64url");
+  const fromJwt = parseOpenaiAuth({ auth_mode: "chatgpt", tokens: { access_token: "AT", id_token: `h.${payload}.s` } });
+  assert.ok(fromJwt);
+  assert.deepEqual(fromJwt, { ok: true, accessToken: "AT", accountId: "acc-from-jwt" });
+});
+
+test("openai parseOpenaiAuth: API-key-only file is the distinct no-credentials failure, junk is null", () => {
+  // "no tokens but OPENAI_API_KEY present" – string or object shape.
+  for (const fileObj of [
+    { auth_mode: "apikey", OPENAI_API_KEY: "sk-openai" },
+    { OPENAI_API_KEY: { api_key: "sk-openai" } },
+    { auth_mode: "chatgpt", OPENAI_API_KEY: "sk-openai" },
+  ]) {
+    const bad = parseOpenaiAuth(fileObj);
+    assert.ok(bad, JSON.stringify(fileObj));
+    assert.ok(!bad.ok);
+    assert.deepEqual(bad.error, {
+      kind: "no-credentials",
+      message: "auth.json holds an API key, not a ChatGPT login",
+      hint: "run codex login (plan usage needs a ChatGPT account)",
+    });
+  }
+
+  // chatgpt login without a derivable account id is a parse failure.
+  const noAccount = parseOpenaiAuth({ auth_mode: "chatgpt", tokens: { access_token: "AT", id_token: "not-a-jwt" } });
+  assert.ok(noAccount);
+  assert.ok(!noAccount.ok);
+  assert.equal(noAccount.error.kind, "parse-failure");
+
+  // Missing file / unparseable file are the caller's concern – the parser only
+  // reports unusable object shapes as null.
+  assert.equal(parseOpenaiAuth(null), null);
+  assert.equal(parseOpenaiAuth("nope"), null);
+  assert.equal(parseOpenaiAuth({}), null);
+  assert.equal(parseOpenaiAuth({ auth_mode: "chatgpt" }), null);
+  assert.equal(parseOpenaiAuth({ auth_mode: "chatgpt", tokens: {} }), null);
+});
+
+test("openai windowKindFromSeconds: canonical divisors plus day/hour fallbacks", () => {
+  assert.equal(windowKindFromSeconds(18_000), "5h");
+  assert.equal(windowKindFromSeconds(604_800), "7d");
+  assert.equal(windowKindFromSeconds(2_592_000), "30d");
+  assert.equal(windowKindFromSeconds(86_400), "1d", "whole days win over whole hours");
+  assert.equal(windowKindFromSeconds(172_800), "2d");
+  assert.equal(windowKindFromSeconds(7_200), "2h");
+  assert.equal(windowKindFromSeconds(3_600), "1h");
+  assert.equal(windowKindFromSeconds(90_061), "25h", "rounded hour estimate");
+});
+
+test("openai parseOpenaiUsage maps the free fixture to one 30d window (secondary null skipped)", () => {
+  const parsed = parseOpenaiUsage(fixture("codex-usage-free"));
+  assert.ok(parsed);
+  assert.deepEqual(parsed, {
+    windows: [{ kind: "30d", usedPercent: 0, resetsAt: new Date(1_792_990_847_000).toISOString() }],
+    plan: "ChatGPT free",
+  });
+});
+
+test("openai parseOpenaiUsage maps the paid fixture to 5h + 7d windows", () => {
+  const parsed = parseOpenaiUsage(fixture("codex-usage-paid"));
+  assert.ok(parsed);
+  assert.deepEqual(parsed, {
+    windows: [
+      { kind: "5h", usedPercent: 12, resetsAt: new Date(1_792_950_847_000).toISOString() },
+      { kind: "7d", usedPercent: 34, resetsAt: new Date(1_792_990_847_000).toISOString() },
+    ],
+    plan: "ChatGPT plus",
+  });
+});
+
+test("openai parseOpenaiUsage strictness: missing rate_limit/primary/used_percent and non-objects are null", () => {
+  assert.equal(parseOpenaiUsage({}), null, "rate_limit missing");
+  assert.equal(parseOpenaiUsage({ plan_type: "free" }), null);
+  assert.equal(parseOpenaiUsage({ rate_limit: {} }), null, "primary_window absent");
+  assert.equal(parseOpenaiUsage({ rate_limit: { primary_window: null } }), null);
+  assert.equal(
+    parseOpenaiUsage({ rate_limit: { primary_window: { limit_window_seconds: 18_000, reset_at: 1_792_990_847 } } }),
+    null,
+    "used_percent missing",
+  );
+  assert.equal(
+    parseOpenaiUsage({ rate_limit: { primary_window: { used_percent: 1, limit_window_seconds: 18_000 } } }),
+    null,
+    "no reset_at and no reset_after_seconds",
+  );
+  assert.equal(
+    parseOpenaiUsage({
+      rate_limit: {
+        primary_window: { used_percent: 1, limit_window_seconds: 18_000, reset_at: 1_792_990_847 },
+        secondary_window: { used_percent: "x", limit_window_seconds: 604_800, reset_at: 1_792_990_847 },
+      },
+    }),
+    null,
+    "a present-but-malformed secondary fails like primary",
+  );
+  assert.equal(parseOpenaiUsage("garbage"), null);
+  assert.equal(parseOpenaiUsage([]), null);
+  assert.equal(parseOpenaiUsage(null), null);
+});
+
+test("openai parseOpenaiUsage: reset_at absent -> now + reset_after_seconds", () => {
+  const now = 1_800_000_000_000;
+  const parsed = parseOpenaiUsage(
+    { rate_limit: { primary_window: { used_percent: 5, limit_window_seconds: 18_000, reset_after_seconds: 600 } } },
+    now,
+  );
+  assert.ok(parsed);
+  assert.deepEqual(parsed.windows, [{ kind: "5h", usedPercent: 5, resetsAt: new Date(now + 600_000).toISOString() }]);
+  assert.equal(parsed.plan, undefined, "plan_type absent -> no plan label");
 });

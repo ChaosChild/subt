@@ -9,6 +9,7 @@ import { createInterface } from "node:readline/promises";
 import type { ProviderId } from "./core.ts";
 import { ALL_PROVIDER_IDS, getSecret, loadConfig, registerSecret, SUBTRK_DIR, scrub } from "./core.ts";
 import { claudeAuth } from "./providers/claude.ts";
+import { parseOpenaiAuth } from "./providers/openai.ts";
 
 export interface InitOpts {
   subtrkDir?: string;
@@ -357,7 +358,7 @@ export async function runInit(opts: InitOpts = {}): Promise<void> {
 
   console.log("subtrk init – checking providers\n");
 
-  // 0. Provider selection: which of the six does this machine actually use?
+  // 0. Provider selection: which of the seven does this machine actually use?
   //    Stored as ~/.subtrk/config.json `{ enabled: [...] }` – the same gate
   //    collectStatus reads – and honored by every step below. Re-run init (or
   //    edit the file) to change it; deleting the file restores all providers.
@@ -591,6 +592,19 @@ export async function runInit(opts: InitOpts = {}): Promise<void> {
       }
     }
     if (Object.keys(updates).length > 0) updateEnvFile(envPath, updates);
+  }
+
+  // 7. OpenAI: check-only – the Codex CLI owns ~/.codex/auth.json, nothing to
+  //    collect. Selected only.
+  if (selected.has("openai")) {
+    const codex = readJson(join(homedir(), ".codex", "auth.json"));
+    const auth = codex ? parseOpenaiAuth(codex) : null;
+    if (auth?.ok) {
+      console.log("[ok]      openai – codex credential found (ChatGPT login)");
+    } else {
+      missing.push("openai – run `codex login`, then re-run subtrk init");
+      console.log(`[missing] openai – ${auth ? auth.error.message : "no Codex credentials at ~/.codex/auth.json"}`);
+    }
   }
 
   console.log(`\n${missing.length === 0 ? "all providers ready" : "still missing:"}`);
